@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Table, Form, Button, Row, Col, InputGroup } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = 'https://localhost:7276/api';
+const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
 // Add onUpdateSuccess to the props
 const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
