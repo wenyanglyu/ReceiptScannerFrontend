@@ -345,7 +345,7 @@ const handleDeleteSelected = async () => {
               <Col md={5}>
                 <div className="receipt-image-container mb-3">
                   <img 
-                    src={`${API_BASE_URL}/Receipt/image/${currentReceipt.imageName}`}
+                    src={currentReceipt.receiptInfo.imageUrl || `${API_BASE_URL}/Receipt/image/${currentReceipt.imageName}`}
                     alt="Receipt"
                     className="img-fluid"
                     onError={(e) => {
