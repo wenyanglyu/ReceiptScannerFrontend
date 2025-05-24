@@ -6,18 +6,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import ReactWordcloud from 'react-wordcloud';
+import { Wordcloud } from '@visx/wordcloud';
+import { scaleLog } from '@visx/scale';
+import { Text } from '@visx/text';
 import { Row, Col } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+const API_BASE_URL = 'https://localhost:7276/api';
 
 const COLORS = [
   '#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28CDB',
   '#FF6B6B', '#4D908E', '#FB8072', '#80B1D3', '#FDB462'
 ];
-
-
 
 const CategoryPieChart = () => {
   const [pieData, setPieData] = useState([]);
@@ -26,9 +26,8 @@ const CategoryPieChart = () => {
   const [error, setError] = useState(null);
 
   const handlePieClick = (data, index) => {
-  // Currently does nothing but ready for future implementation
-  console.log('Pie segment clicked:', data, 'at index:', index);
-    };
+    console.log('Pie segment clicked:', data, 'at index:', index);
+  };
 
   // Fetch pie chart data (category spending)
   useEffect(() => {
@@ -61,9 +60,9 @@ const CategoryPieChart = () => {
         });
 
         const words = Object.entries(counts)
-        .map(([text, value]) => ({ text, value }))
-        .sort((a, b) => b.value - a.value) // sort by frequency
-        .slice(0, 40); // limit to top 30
+          .map(([text, value]) => ({ text, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 40);
 
         setWordCloudData(words);
       } catch (err) {
@@ -73,6 +72,21 @@ const CategoryPieChart = () => {
     };
     fetchWordCloud();
   }, []);
+
+  // Font size scale for word cloud
+  const fontScale = scaleLog({
+    domain: [
+      Math.min(...wordCloudData.map(w => w.value)),
+      Math.max(...wordCloudData.map(w => w.value))
+    ],
+    range: [20, 80],
+  });
+
+  const getRotationDegree = () => {
+    const rand = Math.random();
+    const degree = rand > 0.5 ? 60 : -60;
+    return rand * degree;
+  };
 
   // Loading and error states
   if (loading) {
@@ -116,19 +130,37 @@ const CategoryPieChart = () => {
 
         {/* Word Cloud */}
         <Col md={6} className="d-flex align-items-center justify-content-center">
-          <div style={{ width: '100%', height: '100%' }}>
-            <ReactWordcloud
-              words={wordCloudData}
-              options={{
-                rotations: 2,
-                rotationAngles: [0, 90],
-                fontSizes: [25, 85],
-                scale: 'sqrt',
-                deterministic: true,
-                fontFamily: 'sans-serif',
-                enableTooltip: true
-              }}
-            />
+          <div style={{ width: '100%', height: '400px' }}>
+            <svg width="100%" height="100%">
+              <Wordcloud
+                words={wordCloudData}
+                width={500}
+                height={400}
+                fontSize={(datum) => fontScale(datum.value)}
+                font="sans-serif"
+                padding={2}
+                spiral="rectangular"
+                rotate={getRotationDegree}
+                random={() => 0.5}
+              >
+                {(cloudWords) =>
+                  cloudWords.map((w, i) => (
+                    <Text
+                      key={w.text}
+                      fill={COLORS[i % COLORS.length]}
+                      textAnchor="middle"
+                      transform={`translate(${w.x}, ${w.y}) rotate(${w.rotate})`}
+                      fontSize={w.size}
+                      fontFamily={w.font}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => console.log(`Word clicked: ${w.text} (${w.value})`)}
+                    >
+                      {w.text}
+                    </Text>
+                  ))
+                }
+              </Wordcloud>
+            </svg>
           </div>
         </Col>
       </Row>
