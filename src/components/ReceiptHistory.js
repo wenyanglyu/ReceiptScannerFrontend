@@ -374,7 +374,7 @@ const handleDeleteSelected = async () => {
                     {currentReceipt.receiptInfo.items.map((item, idx) => (
                       <tr key={idx}>
                         <td>
-                          <div>{item.product_name}</div>
+                          <div>{item.productName}</div>
                           <small className="text-muted">{item.category}</small>
                         </td>
                         <td>{item.quantity} {item.unit}</td>
