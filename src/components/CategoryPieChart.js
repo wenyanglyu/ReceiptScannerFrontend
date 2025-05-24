@@ -10,7 +10,7 @@ import ReactWordcloud from 'react-wordcloud';
 import { Row, Col } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = 'https://localhost:7276/api';
+const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
 const COLORS = [
   '#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28CDB',
