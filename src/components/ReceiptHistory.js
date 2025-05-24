@@ -350,7 +350,7 @@ const handleDeleteSelected = async () => {
                     className="img-fluid"
                     onError={(e) => {
                       e.target.onerror = null;
-                      e.target.src = 'https://via.placeholder.com/300x400?text=Receipt+Image+Not+Available';
+                      e.target.src = '/fallback-receipt.png'; 
                     }}
                   />
                 </div>
