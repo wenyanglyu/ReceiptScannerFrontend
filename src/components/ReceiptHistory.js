@@ -344,13 +344,19 @@ const handleDeleteSelected = async () => {
             <Row>
               <Col md={5}>
                 <div className="receipt-image-container mb-3">
-                  <img 
-                    src={currentReceipt.receiptInfo.imageUrl || `${API_BASE_URL}/Receipt/image/${currentReceipt.imageName}`}
+                  <img
+                    src={`https://res.cloudinary.com/dvny9ufmb/image/upload/receipts/${currentReceipt.imageName}.jpg`}
                     alt="Receipt"
                     className="img-fluid"
                     onError={(e) => {
+                      // First fallback: use backend API path
                       e.target.onerror = null;
-                      e.target.src = '/fallback-receipt.png'; 
+                      e.target.src = `${API_BASE_URL}/Receipt/image/${currentReceipt.imageName}`;
+                      
+                      // Add a nested error fallback in case that also fails
+                      e.target.addEventListener('error', () => {
+                        e.target.src = '/fallback-receipt.png';
+                      });
                     }}
                   />
                 </div>
