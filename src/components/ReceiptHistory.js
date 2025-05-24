@@ -4,7 +4,7 @@ import { Table, Button, Badge, Card, Row, Col, Modal, Form, Alert } from 'react-
 import axios from 'axios';
 import './ReceiptHistory.css'; // Make sure to create this CSS file
 
-const API_BASE_URL = 'https://localhost:7276/api';
+const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
 const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   const [receipts, setReceipts] = useState([]);
