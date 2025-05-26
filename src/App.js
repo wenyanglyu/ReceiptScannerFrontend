@@ -16,7 +16,7 @@ function App() {
   const [error, setError] = useState(null);
 
   // API base URL - centralize it here
-  const API_BASE_URL = 'https://localhost:7276/api';
+  const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
   useEffect(() => {
     // Fetch existing receipts when component mounts
