@@ -17,6 +17,14 @@ function App() {
 
   // API base URL - centralize it here
   const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     // Fetch existing receipts when component mounts
@@ -73,7 +81,9 @@ const handleUpdateSuccess = (data) => {
               {receiptData && (
                 <Nav.Link onClick={() => setActiveTab('edit')}>Edit Receipt</Nav.Link>
               )}
-              <Nav.Link onClick={() => setActiveTab('dashboard')}>Dashboard</Nav.Link>
+              {!isMobile && (
+                <Nav.Link onClick={() => setActiveTab('dashboard')}>Dashboard</Nav.Link>
+              )}
               <Nav.Link onClick={() => setActiveTab('history')}>Receipt History</Nav.Link>
             </Nav>
           </Navbar.Collapse>
@@ -114,7 +124,12 @@ const handleUpdateSuccess = (data) => {
             </Row>
           </Tab>
           
-          <Tab eventKey="dashboard" title="Dashboard">
+          {!isMobile && (
+            <Tab eventKey="dashboard" title="Dashboard">
+              <Dashboard />
+            </Tab>
+          )}
+
             <Dashboard />
           </Tab>
 
