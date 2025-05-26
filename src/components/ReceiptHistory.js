@@ -7,7 +7,7 @@ import {
 import axios from 'axios';
 import './ReceiptHistory.css';
 
-const API_BASE_URL = 'https://localhost:7276/api';
+const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
 const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   const [receipts, setReceipts] = useState([]);
