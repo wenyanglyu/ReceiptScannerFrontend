@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
+// API base URL
+const API_BASE_URL = 'https://localhost:7276/api';
+
 // 5 premium bubble design variations
 const BUBBLE_DESIGNS = [
   {
@@ -32,43 +35,64 @@ const PhysicsBubblesChart = () => {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [itemData, setItemData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const simulationRef = useRef();
 
-  // Sample data
+  // Fetch real data from API
   useEffect(() => {
-    setTimeout(() => {
-      const sampleData = [
-        { name: 'milk', frequency: 15, totalSpent: 65.50 },
-        { name: 'eggs', frequency: 12, totalSpent: 48.00 },
-        { name: 'bread', frequency: 10, totalSpent: 35.00 },
-        { name: 'chicken', frequency: 8, totalSpent: 95.20 },
-        { name: 'apples', frequency: 9, totalSpent: 42.30 },
-        { name: 'carrots', frequency: 7, totalSpent: 28.70 },
-        { name: 'tomatoes', frequency: 11, totalSpent: 55.80 },
-        { name: 'lettuce', frequency: 6, totalSpent: 24.50 },
-        { name: 'potatoes', frequency: 5, totalSpent: 18.90 },
-        { name: 'onions', frequency: 4, totalSpent: 15.60 },
-        { name: 'coffee', frequency: 13, totalSpent: 78.00 },
-        { name: 'pasta', frequency: 6, totalSpent: 32.40 },
-        { name: 'rice', frequency: 4, totalSpent: 22.80 },
-        { name: 'bananas', frequency: 8, totalSpent: 35.20 },
-        { name: 'beer', frequency: 3, totalSpent: 45.60 }
-      ];
-      setItemData(sampleData);
-      setLoading(false);
-    }, 1000);
+    const fetchItemData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const response = await fetch(`${API_BASE_URL}/Receipt/stats/items`);
+        
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+
+        // Determine how many items to show based on device
+        const maxItems = isMobile ? 20 : 100;
+
+        const formattedData = data
+          .map(item => ({
+            name: item.name || item.itemName || item.item || 'Unknown Item',
+            frequency: item.frequency || item.purchaseCount || item.times || item.count || 0,
+            totalSpent: parseFloat(item.totalSpent || item.totalAmount || item.amount || item.total || 0)
+          }))
+          .sort((a, b) => b.frequency - a.frequency)
+          .slice(0, maxItems);
+        
+        if (formattedData.length === 0) {
+          throw new Error('No items found in API response');
+        }
+        
+        setItemData(formattedData);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching item data:', error);
+        setError(`Failed to load data: ${error.message}`);
+        setLoading(false);
+      }
+    };
+
+    fetchItemData();
   }, []);
 
-  // Handle window resize
+  // Handle window resize and mobile detection
   useEffect(() => {
     const handleResize = () => {
       const container = containerRef.current;
       if (container) {
-        const rect = container.getBoundingClientRect();
+        const isMobileView = window.innerWidth <= 768;
+        setIsMobile(isMobileView);
+        
         setDimensions({
-          width: rect.width,
-          height: Math.max(500, window.innerHeight * 0.7)
+          width: container.offsetWidth - 32,
+          height: isMobileView ? Math.min(400, container.offsetHeight || 400) : Math.max(400, container.offsetHeight || 500)
         });
       }
     };
@@ -80,7 +104,7 @@ const PhysicsBubblesChart = () => {
 
   // Create physics simulation with active movement
   useEffect(() => {
-    if (!itemData.length || loading) return;
+    if (!itemData.length || loading || error) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
@@ -102,32 +126,27 @@ const PhysicsBubblesChart = () => {
       // Scale from 1x to 4x based on data value
       let scaleFactor;
       if (maxValue === minValue) {
-        // If all values are the same, use middle scaling
         scaleFactor = 2.5;
       } else {
-        // Linear scaling from 1 to 4
         const normalizedValue = (value - minValue) / (maxValue - minValue);
-        scaleFactor = 1 + (normalizedValue * 3); // 1 + (0 to 1) * 3 = 1 to 4
+        scaleFactor = 1 + (normalizedValue * 3);
       }
       
       // Base radius calculation - proportional for mobile, fixed for desktop
       let baseRadius;
       if (isMobile) {
-        // Calculate proportional sizing for mobile
-        const availableWidth = width * 0.8; // 80% of screen width
+        const availableWidth = width * 0.8;
         const totalBubbles = itemData.length;
         
-        // Estimate bubbles per row based on screen width
         let bubblesPerRow;
         if (width <= 375) {
-          bubblesPerRow = 3; // Tight packing for small screens
+          bubblesPerRow = 3;
         } else if (width <= 414) {
-          bubblesPerRow = 4; // Medium packing
+          bubblesPerRow = 4;
         } else {
-          bubblesPerRow = 5; // More generous for larger phones
+          bubblesPerRow = 5;
         }
         
-        // Calculate total scale units for all bubbles
         const allScaleFactors = itemData.map(item => {
           const val = viewMode === 'frequency' ? item.frequency : item.totalSpent;
           if (maxValue === minValue) return 2.5;
@@ -137,14 +156,9 @@ const PhysicsBubblesChart = () => {
         
         const averageScale = allScaleFactors.reduce((sum, scale) => sum + scale, 0) / totalBubbles;
         
-        // Calculate base radius as percentage of available space
-        // More conservative calculation to ensure all bubbles fit
-        baseRadius = (availableWidth / bubblesPerRow) / (averageScale * 2.5); // Increased from 2.5 to 3.5
-        
-        // More restrictive bounds for mobile
-        baseRadius = Math.max(8, Math.min(25, baseRadius)); // Reduced max from 30 to 25
+        baseRadius = (availableWidth / bubblesPerRow) / (averageScale * 2.8);
+        baseRadius = Math.max(8, Math.min(30, baseRadius));
       } else {
-        // Desktop uses fixed sizing
         baseRadius = 25;
       }
       
@@ -158,8 +172,7 @@ const PhysicsBubblesChart = () => {
         totalSpent: d.totalSpent,
         radius: radius,
         design: BUBBLE_DESIGNS[i % BUBBLE_DESIGNS.length],
-        // Safe initial positioning - ensure bubbles start well within bounds
-        x: Math.random() * (width - radius * 2.5) + radius * 1.25, // More conservative positioning
+        x: Math.random() * (width - radius * 2.5) + radius * 1.25,
         y: Math.random() * (height - radius * 2.5) + radius * 1.25,
         vx: (Math.random() - 0.5) * 2,
         vy: (Math.random() - 0.5) * 2
@@ -168,22 +181,20 @@ const PhysicsBubblesChart = () => {
 
     // Create force simulation with mobile-optimized settings
     const simulation = d3.forceSimulation(nodes)
-      .force('charge', d3.forceManyBody().strength(isMobile ? -40 : -80)) // Much weaker repulsion on mobile
+      .force('charge', d3.forceManyBody().strength(isMobile ? -40 : -80))
       .force('collision', d3.forceCollide()
         .radius(d => d.radius + (isMobile ? 2 : 2))
         .strength(0.9)
-        .iterations(isMobile ? 2 : 1) // More collision iterations on mobile
+        .iterations(isMobile ? 2 : 1)
       )
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.1 : 0.02)) // Much stronger center force on mobile
+      .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.1 : 0.02))
       .force('boundary', () => {
-        // Much stricter boundary enforcement for mobile
         nodes.forEach(d => {
-          const margin = isMobile ? Math.max(5, d.radius * 0.2) : 10; // Dynamic margin with minimum
+          const margin = isMobile ? Math.max(8, d.radius * 0.2) : 10;
           
-          // Strict boundary checking with immediate correction
           if (d.x - d.radius <= margin) {
             d.x = d.radius + margin;
-            d.vx = Math.abs(d.vx) * (isMobile ? 0.4 : 0.8); // Much gentler bouncing
+            d.vx = Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
           }
           if (d.x + d.radius >= width - margin) {
             d.x = width - d.radius - margin;
@@ -198,25 +209,21 @@ const PhysicsBubblesChart = () => {
             d.vy = -Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
           }
           
-          // Additional safety check - force bubbles back if they somehow escape
           if (isMobile) {
-            d.x = Math.max(d.radius + 5, Math.min(width - d.radius - 5, d.x));
-            d.y = Math.max(d.radius + 5, Math.min(height - d.radius - 5, d.y));
+            d.x = Math.max(d.radius + 8, Math.min(width - d.radius - 8, d.x));
+            d.y = Math.max(d.radius + 8, Math.min(height - d.radius - 8, d.y));
           }
         });
       })
-      .velocityDecay(isMobile ? 0.88 : 0.92) // Higher decay on mobile to reduce movement
-      .alphaDecay(0.002)
+      .velocityDecay(isMobile ? 0.88 : 0.92)
+      .alphaDecay(0.002);
 
-    // Simplified movement force with mobile constraints
     const movementForce = () => {
       nodes.forEach(d => {
-        // Much gentler random forces on mobile
         const forceStrength = isMobile ? 0.05 : 0.15;
         d.vx += (Math.random() - 0.5) * forceStrength;
         d.vy += (Math.random() - 0.5) * forceStrength;
         
-        // Stricter velocity limits on mobile
         const maxVelocity = isMobile ? 1.5 : 3;
         d.vx = Math.max(-maxVelocity, Math.min(maxVelocity, d.vx));
         d.vy = Math.max(-maxVelocity, Math.min(maxVelocity, d.vy));
@@ -226,10 +233,7 @@ const PhysicsBubblesChart = () => {
     simulation.force('movement', movementForce);
     simulationRef.current = simulation;
 
-    // Create container for bubbles
     const container = svg.append('g');
-
-    // Create HTML bubbles using foreignObject for better styling
     const bubbleGroups = container.selectAll('.bubble-group')
       .data(nodes)
       .enter()
@@ -258,7 +262,6 @@ const PhysicsBubblesChart = () => {
       .style('position', 'relative')
       .style('overflow', 'hidden');
 
-    // Add glossy highlights
     bubbleHtml.append('div')
       .style('position', 'absolute')
       .style('top', d => `${d.radius * 0.15}px`)
@@ -271,7 +274,6 @@ const PhysicsBubblesChart = () => {
       .style('pointer-events', 'none')
       .style('filter', 'blur(1px)');
 
-    // Add secondary shine
     bubbleHtml.append('div')
       .style('position', 'absolute')
       .style('top', d => `${d.radius * 0.3}px`)
@@ -284,7 +286,6 @@ const PhysicsBubblesChart = () => {
       .style('pointer-events', 'none')
       .style('filter', 'blur(0.5px)');
 
-    // Add item name
     bubbleHtml.append('div')
       .style('font-size', d => `${Math.max(8, d.radius * (isMobile ? 0.2 : 0.25))}px`)
       .style('font-weight', '700')
@@ -296,7 +297,6 @@ const PhysicsBubblesChart = () => {
       .style('line-height', '1')
       .text(d => d.name.toUpperCase());
 
-    // Add value
     bubbleHtml.append('div')
       .style('font-size', d => `${Math.max(6, d.radius * (isMobile ? 0.15 : 0.18))}px`)
       .style('font-weight', '600')
@@ -305,15 +305,12 @@ const PhysicsBubblesChart = () => {
       .style('text-align', 'center')
       .style('z-index', '3')
       .style('line-height', '1')
-      .text(d => viewMode === 'frequency' ? `${d.frequency}x` : `${d.totalSpent.toFixed(0)}`);
+      .text(d => viewMode === 'frequency' ? `${d.frequency}x` : `$${d.totalSpent.toFixed(0)}`);
 
-    // Add hover effects - NO SIZE CHANGE
     bubbleGroups
       .on('mouseenter', function(event, d) {
-        // Only change cursor and add tooltip - no size change
         d3.select(this).style('cursor', 'pointer');
         
-        // Enhanced tooltip with more information
         const tooltip = container.append('g')
           .attr('class', 'tooltip')
           .attr('transform', `translate(${d.x}, ${d.y - d.radius - 55})`);
@@ -351,7 +348,7 @@ const PhysicsBubblesChart = () => {
           .attr('fill', d.design.border)
           .attr('font-size', isMobile ? '9' : '10')
           .attr('font-weight', '600')
-          .text(`Total spent: ${d.totalSpent.toFixed(2)}`);
+          .text(`Total spent: $${d.totalSpent.toFixed(2)}`);
         
         tooltip.append('text')
           .attr('text-anchor', 'middle')
@@ -359,14 +356,12 @@ const PhysicsBubblesChart = () => {
           .attr('fill', '#ccc')
           .attr('font-size', isMobile ? '8' : '9')
           .attr('font-weight', '500')
-          .text(`Avg: ${(d.totalSpent / d.frequency).toFixed(2)} per purchase`);
+          .text(`Avg: $${(d.totalSpent / d.frequency).toFixed(2)} per purchase`);
       })
       .on('mouseleave', function(event, d) {
-        // Remove tooltip only - no size change
         container.select('.tooltip').remove();
       });
 
-    // Add drag behavior
     const drag = d3.drag()
       .on('start', function(event, d) {
         if (!event.active) simulation.alphaTarget(0.5).restart();
@@ -385,7 +380,6 @@ const PhysicsBubblesChart = () => {
 
     bubbleGroups.call(drag);
 
-    // Add click effects
     bubbleGroups.on('click', function(event, d) {
       d3.select(this).select('div')
         .style('transform', 'scale(1.2)')
@@ -394,13 +388,10 @@ const PhysicsBubblesChart = () => {
         .style('transform', 'scale(1)');
     });
 
-    // Update positions on simulation tick with strict boundary enforcement
     simulation.on('tick', () => {
-      // Additional boundary enforcement on every tick for mobile
       if (isMobile) {
         nodes.forEach(d => {
-          // Force bubbles to stay within strict bounds
-          const safeMargin = 10;
+          const safeMargin = 8;
           d.x = Math.max(d.radius + safeMargin, Math.min(width - d.radius - safeMargin, d.x));
           d.y = Math.max(d.radius + safeMargin, Math.min(height - d.radius - safeMargin, d.y));
         });
@@ -409,10 +400,9 @@ const PhysicsBubblesChart = () => {
       bubbleGroups.attr('transform', d => `translate(${d.x}, ${d.y})`);
     });
 
-    // Keep simulation active with mobile-aware restarts
-    const restartInterval = isMobile ? 4000 : 2000; // Less frequent restarts on mobile
+    const restartInterval = isMobile ? 4000 : 2000;
     const keepAlive = setInterval(() => {
-      const targetAlpha = isMobile ? 0.2 : 0.4; // Less aggressive on mobile
+      const targetAlpha = isMobile ? 0.2 : 0.4;
       
       if (simulation.alpha() < 0.05) {
         simulation.alphaTarget(targetAlpha).restart();
@@ -420,12 +410,11 @@ const PhysicsBubblesChart = () => {
       }
     }, restartInterval);
 
-    // Cleanup
     return () => {
       simulation.stop();
       clearInterval(keepAlive);
     };
-  }, [itemData, viewMode, dimensions, loading, isMobile]);
+  }, [itemData, viewMode, dimensions, loading, error, isMobile]);
 
   if (loading) {
     return (
@@ -448,15 +437,58 @@ const PhysicsBubblesChart = () => {
             animation: 'spin 1s linear infinite',
             margin: '0 auto 1rem'
           }} />
-          <p>Loading premium bubbles...</p>
+          <p>Loading item data...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        padding: '2rem',
+        background: '#fee',
+        border: '1px solid #fcc',
+        borderRadius: '1rem',
+        color: '#c33',
+        textAlign: 'center'
+      }}>
+        <h3>Error Loading Data</h3>
+        <p>{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#c33',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.5rem',
+            cursor: 'pointer'
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+  
+  if (itemData.length === 0) {
+    return (
+      <div style={{
+        padding: '2rem',
+        background: '#e6f3ff',
+        border: '1px solid #b3d9ff',
+        borderRadius: '1rem',
+        color: '#0066cc',
+        textAlign: 'center'
+      }}>
+        No item data available. Upload some receipts to see popular items.
       </div>
     );
   }
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {/* Toggle Controls */}
       <div style={{ marginBottom: '1rem', position: 'relative', zIndex: 10 }}>
         <div style={{ 
           display: 'flex', 
@@ -504,7 +536,6 @@ const PhysicsBubblesChart = () => {
         </div>
       </div>
 
-      {/* Physics Bubble Chart */}
       <div 
         ref={containerRef}
         style={{ 
@@ -513,8 +544,8 @@ const PhysicsBubblesChart = () => {
           overflow: 'hidden',
           background: '#2c2f36',
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          height: '70vh',
-          minHeight: '500px'
+          height: isMobile ? '50vh' : '70vh',
+          minHeight: isMobile ? '300px' : '500px'
         }}
       >
         <svg
@@ -528,7 +559,6 @@ const PhysicsBubblesChart = () => {
         />
       </div>
 
-      {/* CSS Animation */}
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
