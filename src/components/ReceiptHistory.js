@@ -550,7 +550,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
               <Col xs={12} md={5} className="mb-3 mb-md-0">
                 <div className="receipt-image-container mb-3">
                   <img 
-                    src={`${API_BASE_URL}/Receipt/image/${currentReceipt.imageName}`}
+                    src={currentReceipt.receiptInfo?.imageUrl || `${API_BASE_URL}/Receipt/image/${currentReceipt.imageName}`}
                     alt="Receipt"
                     className="receipt-image"
                     onError={(e) => {
