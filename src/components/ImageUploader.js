@@ -170,7 +170,7 @@ const ImageUploader = ({ onUploadSuccess }) => {
       
       console.log("FormData created successfully, attempting upload...");
       
-      const response = await axios.post(`${API_BASE_URL}/Receipt/upload`, formData, {
+      const response = await axios.post(`${API_BASE_URL}/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         },
