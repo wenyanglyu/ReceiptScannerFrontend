@@ -31,7 +31,7 @@ const BUBBLE_DESIGNS = [
 const PhysicsBubblesChart = () => {
   const svgRef = useRef();
   const containerRef = useRef();
-  const [viewMode, setViewMode] = useState('frequency');
+  const viewMode = 'frequency'; // Always use frequency mode
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [itemData, setItemData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -91,8 +91,8 @@ const PhysicsBubblesChart = () => {
         setIsMobile(isMobileView);
         
         setDimensions({
-          width: container.offsetWidth - 32,
-          height: isMobileView ? Math.min(400, container.offsetHeight || 400) : Math.max(400, container.offsetHeight || 500)
+            width: container.clientWidth,   // Use clientWidth instead
+            height: container.clientHeight  // Use clientHeight instead
         });
       }
     };
@@ -489,54 +489,7 @@ const PhysicsBubblesChart = () => {
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <div style={{ marginBottom: '1rem', position: 'relative', zIndex: 10 }}>
-        <div style={{ 
-          display: 'flex', 
-          background: 'rgba(44, 47, 54, 0.9)',
-          borderRadius: '0.5rem',
-          padding: '0.25rem',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(0, 245, 204, 0.3)'
-        }}>
-          <button
-            onClick={() => setViewMode('frequency')}
-            style={{
-              flex: 1,
-              padding: '0.75rem 1rem',
-              border: 'none',
-              backgroundColor: viewMode === 'frequency' ? '#00f5cc' : 'transparent',
-              color: viewMode === 'frequency' ? '#000' : 'white',
-              borderRadius: '0.375rem',
-              fontSize: '0.9rem',
-              fontWeight: '700',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            🔢 Most Frequent
-          </button>
-          <button
-            onClick={() => setViewMode('spending')}
-            style={{
-              flex: 1,
-              padding: '0.75rem 1rem',
-              border: 'none',
-              backgroundColor: viewMode === 'spending' ? '#00f5cc' : 'transparent',
-              color: viewMode === 'spending' ? '#000' : 'white',
-              borderRadius: '0.375rem',
-              fontSize: '0.9rem',
-              fontWeight: '700',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            💰 Highest Spending
-          </button>
-        </div>
-      </div>
-
-      <div 
+     <div 
         ref={containerRef}
         style={{ 
           position: 'relative',
@@ -544,7 +497,7 @@ const PhysicsBubblesChart = () => {
           overflow: 'hidden',
           background: '#2c2f36',
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          height: isMobile ? '50vh' : '70vh',
+          height: isMobile ? '65vh' : '68vh',
           minHeight: isMobile ? '300px' : '500px'
         }}
       >
