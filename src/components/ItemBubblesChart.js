@@ -84,15 +84,24 @@ const PhysicsBubblesChart = () => {
 
   // Handle window resize and mobile detection
   useEffect(() => {
+    // In the resize handler useEffect
     const handleResize = () => {
       const container = containerRef.current;
       if (container) {
         const isMobileView = window.innerWidth <= 768;
         setIsMobile(isMobileView);
         
+        // DEBUG: Check all width measurements
+        console.log('=== WIDTH DEBUG ===');
+        console.log('Container offsetWidth:', container.offsetWidth);
+        console.log('Container clientWidth:', container.clientWidth);
+        console.log('Container scrollWidth:', container.scrollWidth);
+        console.log('Container getBoundingClientRect width:', container.getBoundingClientRect().width);
+        console.log('Current SVG width:', dimensions.width);
+        
         setDimensions({
-            width: container.clientWidth,   // Use clientWidth instead
-            height: container.clientHeight  // Use clientHeight instead
+          width: container.clientWidth,
+          height: container.clientHeight
         });
       }
     };
@@ -109,7 +118,14 @@ const PhysicsBubblesChart = () => {
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
+    // Right after setDimensions, in the physics useEffect
     const { width, height } = dimensions;
+
+    // DEBUG BREAKPOINT HERE:
+    console.log('=== PHYSICS DEBUG ===');
+    console.log('SVG width:', width);
+    console.log('SVG height:', height);
+    console.log('Mobile mode:', isMobile);
     
     // Calculate bubble sizes based on data values with 1x to 4x scaling
     const maxValue = viewMode === 'frequency' 
@@ -172,51 +188,64 @@ const PhysicsBubblesChart = () => {
         totalSpent: d.totalSpent,
         radius: radius,
         design: BUBBLE_DESIGNS[i % BUBBLE_DESIGNS.length],
-        x: Math.random() * (width - radius * 2.5) + radius * 1.25,
-        y: Math.random() * (height - radius * 2.5) + radius * 1.25,
+        x: width / 2,  // Start at center
+        y: height / 2, // Start at center
         vx: (Math.random() - 0.5) * 2,
         vy: (Math.random() - 0.5) * 2
       };
     });
 
     // Create force simulation with mobile-optimized settings
-    const simulation = d3.forceSimulation(nodes)
-      .force('charge', d3.forceManyBody().strength(isMobile ? -40 : -80))
-      .force('collision', d3.forceCollide()
-        .radius(d => d.radius + (isMobile ? 2 : 2))
-        .strength(0.9)
-        .iterations(isMobile ? 2 : 1)
-      )
-      .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.1 : 0.02))
-      .force('boundary', () => {
-        nodes.forEach(d => {
-          const margin = isMobile ? Math.max(8, d.radius * 0.2) : 10;
-          
-          if (d.x - d.radius <= margin) {
-            d.x = d.radius + margin;
-            d.vx = Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
-          }
-          if (d.x + d.radius >= width - margin) {
-            d.x = width - d.radius - margin;
-            d.vx = -Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
-          }
-          if (d.y - d.radius <= margin) {
-            d.y = d.radius + margin;
-            d.vy = Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
-          }
-          if (d.y + d.radius >= height - margin) {
-            d.y = height - d.radius - margin;
-            d.vy = -Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
-          }
-          
-          if (isMobile) {
-            d.x = Math.max(d.radius + 8, Math.min(width - d.radius - 8, d.x));
-            d.y = Math.max(d.radius + 8, Math.min(height - d.radius - 8, d.y));
-          }
-        });
-      })
-      .velocityDecay(isMobile ? 0.88 : 0.92)
-      .alphaDecay(0.002);
+  const simulation = d3.forceSimulation(nodes)
+  .force('charge', d3.forceManyBody().strength(isMobile ? -40 : -80))
+  .force('collision', d3.forceCollide()
+    .radius(d => d.radius + (isMobile ? 2 : 2))
+    .strength(0.9)
+    .iterations(isMobile ? 2 : 1)
+  )
+ .force('boundary', () => {
+  const currentWidth = dimensions.width;   // Get current width
+  const currentHeight = dimensions.height; // Get current height
+  
+  nodes.forEach(d => {
+    const marginPercent = isMobile ? 0.05 : 0.03;
+    const xMargin = currentWidth * marginPercent;   // Use current width
+    const yMargin = currentHeight * marginPercent;  // Use current height
+      
+      // DEBUG BREAKPOINT HERE:
+      if (Math.random() < 0.01) { // Only log 1% of the time to avoid spam
+        console.log('=== BOUNDARY DEBUG ===');
+        console.log('Width:', width, 'Height:', height);
+        console.log('X Margin:', xMargin, 'Y Margin:', yMargin);
+        console.log('Margin %:', marginPercent);
+      }
+      
+      // MOVE THESE INSIDE THE forEach LOOP:
+      if (d.x - d.radius <= xMargin) {
+        d.x = d.radius + xMargin;
+        d.vx = Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
+      }
+      if (d.x + d.radius >= width - xMargin) {
+        d.x = width - d.radius - xMargin;
+        d.vx = -Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
+      }
+      if (d.y - d.radius <= yMargin) {
+        d.y = d.radius + yMargin;
+        d.vy = Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
+      }
+      if (d.y + d.radius >= height - yMargin) {
+        d.y = height - d.radius - yMargin;
+        d.vy = -Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
+      }
+      
+      if (isMobile) {
+        d.x = Math.max(d.radius + xMargin, Math.min(width - d.radius - xMargin, d.x));
+        d.y = Math.max(d.radius + yMargin, Math.min(height - d.radius - yMargin, d.y));
+      }
+    }); // Close forEach here
+  }) // Close .force('boundary') here
+  .velocityDecay(isMobile ? 0.88 : 0.92)
+  .alphaDecay(0.002);
 
     const movementForce = () => {
       nodes.forEach(d => {
@@ -232,7 +261,19 @@ const PhysicsBubblesChart = () => {
 
     simulation.force('movement', movementForce);
     simulationRef.current = simulation;
-
+// After creating the simulation, add this:
+    setTimeout(() => {
+      // Reposition bubbles randomly after container is ready
+      nodes.forEach(d => {
+        d.x = (Math.random() * 0.6 + 0.2) * width;  // 30%-70% of width
+        d.y = (Math.random() * 0.6 + 0.2) * height; // 30%-70% of height
+        d.vx = (Math.random() - 0.5) * 8; // Add some initial velocity
+        d.vy = (Math.random() - 0.5) * 8;
+      });
+      
+      // Restart simulation with new positions
+      simulation.alpha(0.8).restart();
+    }, 100); // Small delay to ensure container is ready
     const container = svg.append('g');
     const bubbleGroups = container.selectAll('.bubble-group')
       .data(nodes)
@@ -287,7 +328,7 @@ const PhysicsBubblesChart = () => {
       .style('filter', 'blur(0.5px)');
 
     bubbleHtml.append('div')
-      .style('font-size', d => `${Math.max(8, d.radius * (isMobile ? 0.2 : 0.25))}px`)
+      .style('font-size', d => `${Math.max(10, d.radius * (isMobile ? 0.3 : 0.35))}px`)
       .style('font-weight', '700')
       .style('color', 'white')
       .style('text-shadow', '0 1px 3px rgba(0, 0, 0, 0.8)')
@@ -298,7 +339,7 @@ const PhysicsBubblesChart = () => {
       .text(d => d.name.toUpperCase());
 
     bubbleHtml.append('div')
-      .style('font-size', d => `${Math.max(6, d.radius * (isMobile ? 0.15 : 0.18))}px`)
+      .style('font-size', d => `${Math.max(8, d.radius * (isMobile ? 0.22 : 0.25))}px`)
       .style('font-weight', '600')
       .style('color', 'white')
       .style('text-shadow', '0 1px 2px rgba(0, 0, 0, 0.8)')
@@ -512,7 +553,7 @@ const PhysicsBubblesChart = () => {
         />
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
