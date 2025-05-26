@@ -32,7 +32,14 @@ const PhysicsBubblesChart = () => {
   const svgRef = useRef();
   const containerRef = useRef();
   const viewMode = 'frequency'; // Always use frequency mode
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [dimensions, setDimensions] = useState(() => {
+  const isMobileInit = window.innerWidth <= 768;
+  return {
+    width: isMobileInit ? 360 : 800,
+    height: isMobileInit ? 500 : 600
+  };
+});
+
   const [itemData, setItemData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -83,38 +90,30 @@ const PhysicsBubblesChart = () => {
   }, []);
 
   // Handle window resize and mobile detection
-  useEffect(() => {
-    // In the resize handler useEffect
-    const handleResize = () => {
-      const container = containerRef.current;
-      if (container) {
-        const isMobileView = window.innerWidth <= 768;
-        setIsMobile(isMobileView);
-        
-        // DEBUG: Check all width measurements
-        console.log('=== WIDTH DEBUG ===');
-        console.log('Container offsetWidth:', container.offsetWidth);
-        console.log('Container clientWidth:', container.clientWidth);
-        console.log('Container scrollWidth:', container.scrollWidth);
-        console.log('Container getBoundingClientRect width:', container.getBoundingClientRect().width);
-        console.log('Current SVG width:', dimensions.width);
-        
-        setDimensions({
-          width: container.clientWidth,
-          height: container.clientHeight
-        });
-      }
-    };
+ // Correct: SINGLE useEffect for resize and dimension setup
+    useEffect(() => {
+      const handleResize = () => {
+        const container = containerRef.current;
+        if (container) {
+          const isMobileView = window.innerWidth <= 768;
+          setIsMobile(isMobileView);
+          setDimensions({
+            width: container.clientWidth,
+            height: container.clientHeight
+          });
+        }
+      };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  setTimeout(handleResize, 100); // Delay to ensure container is painted
+  window.addEventListener('resize', handleResize);
+  return () => window.removeEventListener('resize', handleResize);
+}, []);
+
+
 
   // Create physics simulation with active movement
   useEffect(() => {
     if (!itemData.length || loading || error) return;
-
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
@@ -203,14 +202,12 @@ const PhysicsBubblesChart = () => {
     .strength(0.9)
     .iterations(isMobile ? 2 : 1)
   )
- .force('boundary', () => {
-  const currentWidth = dimensions.width;   // Get current width
-  const currentHeight = dimensions.height; // Get current height
-  
-  nodes.forEach(d => {
-    const marginPercent = isMobile ? 0.05 : 0.03;
-    const xMargin = currentWidth * marginPercent;   // Use current width
-    const yMargin = currentHeight * marginPercent;  // Use current height
+  .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.3 : 0.02))
+  .force('boundary', () => {
+    nodes.forEach(d => {
+      const marginPercent = isMobile ? 0.05 : 0.03;
+      const xMargin = width * marginPercent;
+      const yMargin = height * marginPercent;
       
       // DEBUG BREAKPOINT HERE:
       if (Math.random() < 0.01) { // Only log 1% of the time to avoid spam
@@ -430,16 +427,32 @@ const PhysicsBubblesChart = () => {
     });
 
     simulation.on('tick', () => {
-      if (isMobile) {
-        nodes.forEach(d => {
-          const safeMargin = 8;
-          d.x = Math.max(d.radius + safeMargin, Math.min(width - d.radius - safeMargin, d.x));
-          d.y = Math.max(d.radius + safeMargin, Math.min(height - d.radius - safeMargin, d.y));
-        });
-      }
-      
-      bubbleGroups.attr('transform', d => `translate(${d.x}, ${d.y})`);
+  const stuckThreshold = 5;
+
+  nodes.forEach(d => {
+    const nearTopLeft = d.x < 50 && d.y < 50;
+    const tooStill = Math.abs(d.vx) + Math.abs(d.vy) < 0.1;
+
+    if (nearTopLeft && tooStill) {
+      // Force kick out of top-left
+      d.vx = (Math.random() - 0.5) * stuckThreshold;
+      d.vy = (Math.random() - 0.5) * stuckThreshold;
+      d.x = 100 + Math.random() * 100;
+      d.y = 100 + Math.random() * 100;
+    }
+  });
+
+  if (isMobile) {
+    const safeMargin = 8;
+    nodes.forEach(d => {
+      d.x = Math.max(d.radius + safeMargin, Math.min(width - d.radius - safeMargin, d.x));
+      d.y = Math.max(d.radius + safeMargin, Math.min(height - d.radius - safeMargin, d.y));
     });
+  }
+
+  bubbleGroups.attr('transform', d => `translate(${d.x}, ${d.y})`);
+});
+
 
     const restartInterval = isMobile ? 4000 : 2000;
     const keepAlive = setInterval(() => {
