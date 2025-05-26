@@ -130,9 +130,6 @@ const handleUpdateSuccess = (data) => {
             </Tab>
           )}
 
-            <Dashboard />
-          </Tab>
-
           <Tab eventKey="history" title="Receipt History">
             <ReceiptHistory 
               onEditReceipt={handleEditReceipt}
