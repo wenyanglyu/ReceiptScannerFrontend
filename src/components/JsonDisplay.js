@@ -5,7 +5,7 @@ import {
 } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = 'https://localhost:7276/api';
+const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
 const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
   const [editableData, setEditableData] = useState(null);
