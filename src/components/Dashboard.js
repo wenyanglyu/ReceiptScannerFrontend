@@ -26,18 +26,14 @@ const Dashboard = () => {
       {/* Desktop: Stacked view for better chart sizing */}
       {viewMode === 'split' && (
         <>
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <h2 className="mb-0">Dashboard</h2>
-          </div>
-          
+
           {/* Desktop Layout - Stacked vertically for better width */}
           <Row className="g-4">
             {/* Item Bubbles Chart - Full width */}
             <Col xs={12}>
               <Card className="dashboard-card">
                 <Card.Header className="d-flex justify-content-between align-items-center">
-                  <h5 className="mb-0">🫧 Popular Items</h5>
-                  <small className="text-muted">Bubble size shows frequency or spending</small>
+                  <h5 className="mb-0">🫧 Bubbles</h5>
                 </Card.Header>
                 <Card.Body style={{ minHeight: '500px' }}>
                   <ItemBubblesChart />
@@ -50,7 +46,6 @@ const Dashboard = () => {
               <Card className="dashboard-card">
                 <Card.Header className="d-flex justify-content-between align-items-center">
                   <h5 className="mb-0">📈 Spending Trends</h5>
-                  <small className="text-muted">Track spending patterns over time</small>
                 </Card.Header>
                 <Card.Body style={{ minHeight: '500px' }}>
                   <SpendingTrends />
@@ -64,9 +59,6 @@ const Dashboard = () => {
       {/* Mobile: Tab view with one chart at a time */}
       {viewMode === 'tabs' && (
         <>
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h4 className="mb-0">Dashboard</h4>
-          </div>
           
           {/* Mobile Tab Navigation */}
           <Card className="dashboard-mobile-card">
@@ -77,7 +69,7 @@ const Dashboard = () => {
                   onClick={() => setActiveTab('items')}
                   className="rounded-0 border-0 py-3"
                 >
-                  🫧 Popular Items
+                  🫧 Bubbles
                 </Button>
                 <Button
                   variant={activeTab === 'trends' ? 'primary' : 'outline-primary'}
@@ -94,10 +86,6 @@ const Dashboard = () => {
               {activeTab === 'items' && (
                 <div className="mobile-chart-container">
                   <div className="chart-header p-3 bg-light">
-                    <h6 className="mb-0 text-center">Popular Items</h6>
-                    <small className="d-block text-center text-muted mt-1">
-                      Switch between frequency and spending
-                    </small>
                   </div>
                   <div style={{ height: '70vh', padding: '1rem' }}>
                     <ItemBubblesChart />
@@ -110,9 +98,6 @@ const Dashboard = () => {
                 <div className="mobile-chart-container">
                   <div className="chart-header p-3 bg-light">
                     <h6 className="mb-0 text-center">Spending Trends</h6>
-                    <small className="d-block text-center text-muted mt-1">
-                      Track your spending patterns
-                    </small>
                   </div>
                   <div style={{ height: '70vh', padding: '1rem' }}>
                     <SpendingTrends />
@@ -125,7 +110,7 @@ const Dashboard = () => {
       )}
 
       {/* Custom Styles */}
-      <style jsx>{`
+      <style>{`
         .dashboard-container {
           padding-bottom: 2rem;
         }
