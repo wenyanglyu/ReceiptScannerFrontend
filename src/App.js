@@ -16,7 +16,7 @@ function App() {
   const [error, setError] = useState(null);
 
   // API base URL - centralize it here
-  const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+  const API_BASE_URL = 'https://localhost:7276/api';
 
   useEffect(() => {
     // Fetch existing receipts when component mounts
@@ -91,17 +91,17 @@ const handleUpdateSuccess = (data) => {
         >
           <Tab eventKey="upload" title="Upload Receipt">
             <Row>
-              <Col md={12}>
+              <Col xs={12} md={12}>
                 <ImageUploader 
                   onUploadSuccess={handleUploadSuccess}
                 />
               </Col>
             </Row>
-          </Tab>
-          
+          </Tab>         
           <Tab eventKey="edit" title="Edit Receipt" disabled={!receiptData}>
             <Row>
-                <Col md={12}>
+                <Col xs={12} md={12}>
+
                 {receiptData ? (
                     <JsonDisplay 
                     receiptData={receiptData} 

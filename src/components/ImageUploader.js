@@ -5,7 +5,7 @@ import { Card, Button, Form, ProgressBar, Alert } from 'react-bootstrap';
 import heic2any from 'heic2any';
 
 // API base URL - centralize it here
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+const API_BASE_URL = 'https://localhost:7276/api';
 
 const ImageUploader = ({ onUploadSuccess }) => {
   const [file, setFile] = useState(null);

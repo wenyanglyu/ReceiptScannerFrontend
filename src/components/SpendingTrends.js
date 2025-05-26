@@ -4,8 +4,7 @@ import axios from 'axios';
 import ChartRenderer from './ChartRenderer';
 
 // API base URL - centralize it here
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
-
+const API_BASE_URL = 'https://localhost:7276/api';
 
 const SpendingTrends = () => {
   const [receiptData, setReceiptData] = useState([]);
