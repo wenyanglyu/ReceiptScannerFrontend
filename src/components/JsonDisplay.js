@@ -147,7 +147,7 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
         }
       };
       
-      const response = await axios.post(`${API_BASE_URL}/Receipt/update`, dataToSave, {
+      const response = await axios.post(`${API_BASE_URL}/Receipt/save-as-file`, dataToSave, {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json'
