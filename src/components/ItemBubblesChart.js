@@ -31,14 +31,16 @@ const BUBBLE_DESIGNS = [
 const PhysicsBubblesChart = () => {
   const svgRef = useRef();
   const containerRef = useRef();
-  const viewMode = 'frequency'; // Always use frequency mode
+  const viewMode = 'frequency';
+  
+  // ✅ FIXED: Single viewport-based dimension system
   const [dimensions, setDimensions] = useState(() => {
-  const isMobileInit = window.innerWidth <= 768;
-  return {
-    width: isMobileInit ? 360 : 800,
-    height: isMobileInit ? 500 : 600
-  };
-});
+    const isMobileInit = window.innerWidth <= 768;
+    return {
+      width: window.innerWidth * (isMobileInit ? 0.9 : 0.95),
+      height: window.innerHeight * (isMobileInit ? 0.75 : 0.85),
+    };
+  });
 
   const [itemData, setItemData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,21 +95,19 @@ const PhysicsBubblesChart = () => {
  // Correct: SINGLE useEffect for resize and dimension setup
     useEffect(() => {
       const handleResize = () => {
-        const container = containerRef.current;
-        if (container) {
-          const isMobileView = window.innerWidth <= 768;
-          setIsMobile(isMobileView);
-          setDimensions({
-            width: container.clientWidth,
-            height: container.clientHeight
-          });
-        }
+        const isMobileView = window.innerWidth <= 768;
+        
+        setDimensions({
+          width: window.innerWidth * (isMobileView ? 0.9 : 0.95),
+          height: window.innerHeight * (isMobileView ? 0.75 : 0.85),
+        });
+        
+        setIsMobile(isMobileView);
       };
 
-  setTimeout(handleResize, 100); // Delay to ensure container is painted
-  window.addEventListener('resize', handleResize);
-  return () => window.removeEventListener('resize', handleResize);
-}, []);
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
 
 
@@ -205,42 +205,33 @@ const PhysicsBubblesChart = () => {
   .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.3 : 0.02))
   .force('boundary', () => {
     nodes.forEach(d => {
-      const marginPercent = isMobile ? 0.05 : 0.03;
-      const xMargin = width * marginPercent;
-      const yMargin = height * marginPercent;
+      const { width, height } = dimensions;
       
-      // DEBUG BREAKPOINT HERE:
-      if (Math.random() < 0.01) { // Only log 1% of the time to avoid spam
-        console.log('=== BOUNDARY DEBUG ===');
-        console.log('Width:', width, 'Height:', height);
-        console.log('X Margin:', xMargin, 'Y Margin:', yMargin);
-        console.log('Margin %:', marginPercent);
-      }
+      // ✅ Simple boundary with bubble radius consideration
+      const minX = d.radius;
+      const maxX = width - d.radius;
+      const minY = d.radius;
+      const maxY = height - d.radius;
       
-      // MOVE THESE INSIDE THE forEach LOOP:
-      if (d.x - d.radius <= xMargin) {
-        d.x = d.radius + xMargin;
-        d.vx = Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
+      if (d.x < minX) {
+        d.x = minX;
+        d.vx = Math.abs(d.vx) * 0.8;
       }
-      if (d.x + d.radius >= width - xMargin) {
-        d.x = width - d.radius - xMargin;
-        d.vx = -Math.abs(d.vx) * (isMobile ? 0.4 : 0.8);
+      if (d.x > maxX) {
+        d.x = maxX;
+        d.vx = -Math.abs(d.vx) * 0.8;
       }
-      if (d.y - d.radius <= yMargin) {
-        d.y = d.radius + yMargin;
-        d.vy = Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
+      if (d.y < minY) {
+        d.y = minY;
+        d.vy = Math.abs(d.vy) * 0.8;
       }
-      if (d.y + d.radius >= height - yMargin) {
-        d.y = height - d.radius - yMargin;
-        d.vy = -Math.abs(d.vy) * (isMobile ? 0.4 : 0.8);
+      if (d.y > maxY) {
+        d.y = maxY;
+        d.vy = -Math.abs(d.vy) * 0.8;
       }
-      
-      if (isMobile) {
-        d.x = Math.max(d.radius + xMargin, Math.min(width - d.radius - xMargin, d.x));
-        d.y = Math.max(d.radius + yMargin, Math.min(height - d.radius - yMargin, d.y));
-      }
-    }); // Close forEach here
-  }) // Close .force('boundary') here
+    });
+  })
+
   .velocityDecay(isMobile ? 0.88 : 0.92)
   .alphaDecay(0.002);
 
