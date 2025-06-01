@@ -33,12 +33,13 @@ const PhysicsBubblesChart = () => {
   const containerRef = useRef();
   const viewMode = 'frequency';
   
-  // ✅ FIXED: Single viewport-based dimension system
+  // ✅ STEP 1: Start with hardcoded fallback values
   const [dimensions, setDimensions] = useState(() => {
     const isMobileInit = window.innerWidth <= 768;
     return {
-      width: window.innerWidth * (isMobileInit ? 0.9 : 0.95),
-      height: window.innerHeight * (isMobileInit ? 0.75 : 0.85),
+      width: isMobileInit ? 360 : 1240,
+      height: isMobileInit ? 500 : 584,
+      source: 'hardcoded' // Track the source for debugging
     };
   });
 
@@ -48,8 +49,49 @@ const PhysicsBubblesChart = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const simulationRef = useRef();
 
+ useEffect(() => {
+    const detectInitialContainerSize = () => {
+      const container = containerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const realWidth = rect.width || container.clientWidth;
+        const realHeight = rect.height || container.clientHeight;
+        
+        // Only update if we get valid real dimensions
+        if (realWidth > 0 && realHeight > 0) {
+          setDimensions(prev => {
+            console.log('📐 Initial container detection:', {
+              from: { width: prev.width, height: prev.height, source: prev.source },
+              to: { width: realWidth, height: realHeight, source: 'container-initial' }
+            });
+            
+            return {
+              width: realWidth,
+              height: realHeight,
+              source: 'container-initial'
+            };
+          });
+          
+          setIsMobile(realWidth <= 768);
+        }
+      }
+    };
+    detectInitialContainerSize(); // Immediate
+    
+    const timeouts = [
+      setTimeout(detectInitialContainerSize, 50),   // After 50ms
+      setTimeout(detectInitialContainerSize, 100),  // After 100ms
+      setTimeout(detectInitialContainerSize, 200),  // After 200ms
+      setTimeout(detectInitialContainerSize, 500),  // After 500ms (final fallback)
+    ];
+    
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, []); // Run once on mount
+  
   // Fetch real data from API
-  useEffect(() => {
+ useEffect(() => {
     const fetchItemData = async () => {
       try {
         setLoading(true);
@@ -62,8 +104,6 @@ const PhysicsBubblesChart = () => {
         }
         
         const data = await response.json();
-
-        // Determine how many items to show based on device
         const maxItems = isMobile ? 20 : 100;
 
         const formattedData = data
@@ -89,42 +129,64 @@ const PhysicsBubblesChart = () => {
     };
 
     fetchItemData();
-  }, []);
-
+  }, [isMobile]);
+  
   // Handle window resize and mobile detection
  // Correct: SINGLE useEffect for resize and dimension setup
-    useEffect(() => {
-      const handleResize = () => {
-        const isMobileView = window.innerWidth <= 768;
+ useEffect(() => {
+    const handleResize = () => {
+      const container = containerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const realWidth = rect.width || container.clientWidth;
+        const realHeight = rect.height || container.clientHeight;
         
-        setDimensions({
-          width: window.innerWidth * (isMobileView ? 0.9 : 0.95),
-          height: window.innerHeight * (isMobileView ? 0.75 : 0.85),
-        });
-        
-        setIsMobile(isMobileView);
-      };
+        if (realWidth > 0 && realHeight > 0) {
+          setDimensions(prev => {
+            // Only update if significantly different
+            const widthDiff = Math.abs(prev.width - realWidth);
+            const heightDiff = Math.abs(prev.height - realHeight);
+            
+            if (widthDiff > 10 || heightDiff > 10) {
+              console.log('📐 Resize container detection:', {
+                from: { width: prev.width, height: prev.height, source: prev.source },
+                to: { width: realWidth, height: realHeight, source: 'container-resize' }
+              });
+              
+              return {
+                width: realWidth,
+                height: realHeight,
+                source: 'container-resize'
+              };
+            }
+            return prev;
+          });
+          
+          setIsMobile(realWidth <= 768);
+        }
+      }
+    };
 
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
 
 
-  // Create physics simulation with active movement
+
   useEffect(() => {
     if (!itemData.length || loading || error) return;
+    
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
-    // Right after setDimensions, in the physics useEffect
-    const { width, height } = dimensions;
+    const { width, height, source } = dimensions;
 
-    // DEBUG BREAKPOINT HERE:
     console.log('=== PHYSICS DEBUG ===');
     console.log('SVG width:', width);
     console.log('SVG height:', height);
     console.log('Mobile mode:', isMobile);
+    console.log('Dimension source:', source);
     
     // Calculate bubble sizes based on data values with 1x to 4x scaling
     const maxValue = viewMode === 'frequency' 
@@ -187,53 +249,52 @@ const PhysicsBubblesChart = () => {
         totalSpent: d.totalSpent,
         radius: radius,
         design: BUBBLE_DESIGNS[i % BUBBLE_DESIGNS.length],
-        x: width / 2,  // Start at center
-        y: height / 2, // Start at center
+        x: width / 2,
+        y: height / 2,
         vx: (Math.random() - 0.5) * 2,
         vy: (Math.random() - 0.5) * 2
       };
     });
 
-    // Create force simulation with mobile-optimized settings
-  const simulation = d3.forceSimulation(nodes)
-  .force('charge', d3.forceManyBody().strength(isMobile ? -40 : -80))
-  .force('collision', d3.forceCollide()
-    .radius(d => d.radius + (isMobile ? 2 : 2))
-    .strength(0.9)
-    .iterations(isMobile ? 2 : 1)
-  )
-  .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.3 : 0.02))
-  .force('boundary', () => {
-    nodes.forEach(d => {
-      const { width, height } = dimensions;
-      
-      // ✅ Simple boundary with bubble radius consideration
-      const minX = d.radius;
-      const maxX = width - d.radius;
-      const minY = d.radius;
-      const maxY = height - d.radius;
-      
-      if (d.x < minX) {
-        d.x = minX;
-        d.vx = Math.abs(d.vx) * 0.8;
-      }
-      if (d.x > maxX) {
-        d.x = maxX;
-        d.vx = -Math.abs(d.vx) * 0.8;
-      }
-      if (d.y < minY) {
-        d.y = minY;
-        d.vy = Math.abs(d.vy) * 0.8;
-      }
-      if (d.y > maxY) {
-        d.y = maxY;
-        d.vy = -Math.abs(d.vy) * 0.8;
-      }
-    });
-  })
+    // Create force simulation with container-based boundaries
+    const simulation = d3.forceSimulation(nodes)
+      .force('charge', d3.forceManyBody().strength(isMobile ? -40 : -80))
+      .force('collision', d3.forceCollide()
+        .radius(d => d.radius + (isMobile ? 2 : 2))
+        .strength(0.9)
+        .iterations(isMobile ? 2 : 1)
+      )
+      .force('center', d3.forceCenter(width / 2, height / 2).strength(isMobile ? 0.3 : 0.02))
+      .force('boundary', () => {
+        nodes.forEach(d => {
+          // ✅ Use container dimensions for boundaries
+          const margin = isMobile ? 8 : 5;
+          const minX = d.radius + margin;
+          const maxX = width - d.radius - margin;
+          const minY = d.radius + margin;
+          const maxY = height - d.radius - margin;
+          
+          if (d.x < minX) {
+            d.x = minX;
+            d.vx = Math.abs(d.vx) * 0.8;
+          }
+          if (d.x > maxX) {
+            d.x = maxX;
+            d.vx = -Math.abs(d.vx) * 0.8;
+          }
+          if (d.y < minY) {
+            d.y = minY;
+            d.vy = Math.abs(d.vy) * 0.8;
+          }
+          if (d.y > maxY) {
+            d.y = maxY;
+            d.vy = -Math.abs(d.vy) * 0.8;
+          }
+        });
+      })
+      .velocityDecay(isMobile ? 0.88 : 0.92)
+      .alphaDecay(0.002);
 
-  .velocityDecay(isMobile ? 0.88 : 0.92)
-  .alphaDecay(0.002);
 
     const movementForce = () => {
       nodes.forEach(d => {
@@ -457,7 +518,7 @@ const PhysicsBubblesChart = () => {
 
     return () => {
       simulation.stop();
-      clearInterval(keepAlive);
+      clearInterval(keepAlive); 
     };
   }, [itemData, viewMode, dimensions, loading, error, isMobile]);
 
