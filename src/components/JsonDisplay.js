@@ -55,15 +55,24 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
   const handleItemChange = (index, field, value) => {
     const updatedItems = [...editableData.receiptInfo.items];
     
-    if (field === 'price' || field === 'quantity') {
-      value = parseFloat(value) || 0;
+      if (field === 'price' || field === 'quantity') {
+    // Allow empty string and partial numbers during typing
+    if (value === '' || value === '.' || /^\d*\.?\d*$/.test(value)) {
+      // Keep as string during editing
+      updatedItems[index] = {
+        ...updatedItems[index],
+        [field]: value
+      };
+    } else {
+      // Invalid input, don't update
+      return;
     }
-    
+  } else {
     updatedItems[index] = {
       ...updatedItems[index],
       [field]: value
     };
-    
+  }
     setEditableData({
       ...editableData,
       receiptInfo: {
@@ -130,17 +139,17 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
         return num;
       };
       
-      const dataToSave = {
-        imageName: editableData.imageName,
-        receiptInfo: {
-          items: editableData.receiptInfo.items.map(item => ({
-            productName: item.productName,
-            casualName: item.casualName,
-            price: cleanNumber(parseFloat(item.price)),
-            quantity: cleanNumber(parseFloat(item.quantity)),
-            unit: item.unit,
-            category: item.category
-          })),
+    const dataToSave = {
+      imageName: editableData.imageName,
+      receiptInfo: {
+        items: editableData.receiptInfo.items.map(item => ({
+          productName: item.productName,
+          casualName: item.casualName,
+          price: cleanNumber(parseFloat(item.price) || 0), // ✅ Parse only when saving
+          quantity: cleanNumber(parseFloat(item.quantity) || 0), // ✅ Parse only when saving
+          unit: item.unit,
+          category: item.category
+        })),
           date: receiptDate,
           calculatedTotal: cleanNumber(parseFloat(calculatedTotal)),
           providedTotal: cleanNumber(parseFloat(calculatedTotal))
@@ -170,10 +179,14 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
     }
   };
 
-  const currentTotal = editableData.receiptInfo.items.reduce(
-    (sum, item) => sum + (item.price || 0), 
-    0
-  ).toFixed(2);
+const currentTotal = editableData.receiptInfo.items.reduce(
+  (sum, item) => {
+    // ✅ FIXED: Parse only when calculating, handle strings
+    const price = typeof item.price === 'string' ? parseFloat(item.price) || 0 : item.price || 0;
+    return sum + price;
+  }, 
+  0
+).toFixed(2);
 
   const formatCurrency = (amount) => {
     return `$${parseFloat(amount || 0).toFixed(2)}`;

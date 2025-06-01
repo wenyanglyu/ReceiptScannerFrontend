@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Card, Button, Form, ProgressBar, Alert } from 'react-bootstrap';
-// Import heic2any for HEIC conversion
-import heic2any from 'heic2any';
 
 // API base URL - centralize it here
 const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
@@ -15,186 +13,55 @@ const ImageUploader = ({ onUploadSuccess }) => {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
 
-  // Enhanced format detection - checks if file needs conversion
-  const needsConversion = (file) => {
-    if (!file) return false;
-    
-    // HEIC/HEIF files (iOS devices)
-    const isHeicHeif = file.type === 'image/heic' || 
-                       file.type === 'image/heif' || 
-                       file.name.toLowerCase().endsWith('.heic') || 
-                       file.name.toLowerCase().endsWith('.heif');
-    
-    // Other formats not directly supported by OpenAI
-    const needsJpegConversion = file.type === 'image/bmp' ||
-                               file.type === 'image/tiff' ||
-                               file.type === 'image/svg+xml' ||
-                               file.name.toLowerCase().endsWith('.bmp') ||
-                               file.name.toLowerCase().endsWith('.tiff') ||
-                               file.name.toLowerCase().endsWith('.tif') ||
-                               file.name.toLowerCase().endsWith('.svg');
-    
-    return isHeicHeif || needsJpegConversion;
-  };
 
-  // Canvas-based conversion for non-HEIC formats
-  const convertToJpeg = (file) => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      img.onload = () => {
-        // Set canvas size to image size (maintain original dimensions)
-        canvas.width = img.width;
-        canvas.height = img.height;
-        
-        // Draw image to canvas with white background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
-        
-        // Convert to JPEG blob with high quality
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Failed to convert image to JPEG'));
-          }
-        }, 'image/jpeg', 0.92); // High quality for better OCR
-      };
-      
-      img.onerror = () => reject(new Error('Failed to load image for conversion'));
-      img.src = URL.createObjectURL(file);
-    });
-  };
+ const handleFileChange = (e) => {
+  const selectedFile = e.target.files[0];
+  if (!selectedFile) return;
+  
+  // Reset states
+  setError('');
+  setWarning('');
+  setPreview('');
+  
+  // Validate file size (max 10MB)
+  if (selectedFile.size > 10 * 1024 * 1024) {
+    setError('File size too large. Please select an image under 10MB.');
+    return;
+  }
+  
+  setFile(selectedFile);
+  
+  // Create preview
+  const reader = new FileReader();
+  reader.onload = () => setPreview(reader.result);
+  reader.onerror = () => setError('Unable to preview this file type.');
+  reader.readAsDataURL(selectedFile);
+};
 
-  // Enhanced file processing with multi-format support
-  const processFile = async (selectedFile) => {
-    if (!selectedFile) return null;
-
-    let fileToUse = selectedFile;
-    let conversionMessage = '';
-
-    if (needsConversion(selectedFile)) {
-      const originalFormat = selectedFile.type || `${selectedFile.name.split('.').pop()?.toUpperCase() || 'Unknown'}`;
-      conversionMessage = `Converting ${originalFormat} to JPEG for optimal processing...`;
-      setWarning(conversionMessage);
-      
-      try {
-        let blob;
-        
-        // Handle HEIC/HEIF files with heic2any
-        if (selectedFile.type === 'image/heic' || selectedFile.type === 'image/heif' || 
-            selectedFile.name.toLowerCase().endsWith('.heic') || 
-            selectedFile.name.toLowerCase().endsWith('.heif')) {
-          
-          blob = await heic2any({
-            blob: selectedFile,
-            toType: "image/jpeg",
-            quality: 0.92 // High quality for better OCR
-          });
-        } 
-        // Handle other formats with canvas conversion
-        else {
-          blob = await convertToJpeg(selectedFile);
-        }
-        
-        // Create new file with converted blob
-        const originalName = selectedFile.name;
-        const baseName = originalName.substring(0, originalName.lastIndexOf('.')) || originalName;
-        
-        fileToUse = new File([blob], `${baseName}.jpg`, { 
-          type: 'image/jpeg',
-          lastModified: Date.now()
-        });
-        
-        setWarning(`✅ File converted to JPEG successfully! Original: ${(selectedFile.size / 1024).toFixed(1)}KB → Optimized: ${(fileToUse.size / 1024).toFixed(1)}KB`);
-        
-      } catch (err) {
-        console.error("File conversion error:", err);
-        setError(`Failed to convert ${originalFormat} file. Please try converting to JPEG manually or use a different image.`);
-        return null;
-      }
-    }
-
-    return fileToUse;
-  };
-
-  // Updated handleFileChange with enhanced processing
-  const handleFileChange = async (e) => {
-    const selectedFile = e.target.files[0];
-    if (!selectedFile) return;
-    
-    // Reset states
-    setError('');
-    setWarning('');
-    setPreview('');
-    
-    // Validate file size (max 10MB)
-    if (selectedFile.size > 10 * 1024 * 1024) {
-      setError('File size too large. Please select an image under 10MB.');
-      return;
-    }
-    
-    // Process the file
-    const processedFile = await processFile(selectedFile);
-    if (!processedFile) return; // Error occurred during processing
-    
-    setFile(processedFile);
-    
-    // Create preview
-    try {
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result);
-      reader.onerror = () => {
-        setWarning(prev => prev + "\nNote: Unable to preview this file type, but upload should still work.");
-        setPreview('');
-      };
-      reader.readAsDataURL(processedFile);
-    } catch (err) {
-      console.error("Preview error:", err);
-      setWarning(prev => prev + "\nNote: Unable to create preview, but upload should still work.");
-    }
-  };
-
-  // Updated handleDrop with enhanced processing
-  const handleDrop = async (e) => {
-    e.preventDefault();
-    const droppedFile = e.dataTransfer.files[0];
-    if (!droppedFile) return;
-    
-    // Reset states
-    setError('');
-    setWarning('');
-    setPreview('');
-    
-    // Validate file size
-    if (droppedFile.size > 10 * 1024 * 1024) {
-      setError('File size too large. Please select an image under 10MB.');
-      return;
-    }
-    
-    // Process the file
-    const processedFile = await processFile(droppedFile);
-    if (!processedFile) return;
-    
-    setFile(processedFile);
-    
-    // Create preview
-    try {
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result);
-      reader.onerror = () => {
-        setWarning(prev => prev + "\nNote: Unable to preview this file type, but upload should still work.");
-        setPreview('');
-      };
-      reader.readAsDataURL(processedFile);
-    } catch (err) {
-      console.error("Preview error:", err);
-      setWarning(prev => prev + "\nNote: Unable to create preview, but upload should still work.");
-    }
-  };
+  const handleDrop = (e) => {
+  e.preventDefault();
+  const droppedFile = e.dataTransfer.files[0];
+  if (!droppedFile) return;
+  
+  // Reset states
+  setError('');
+  setWarning('');
+  setPreview('');
+  
+  // Validate file size
+  if (droppedFile.size > 10 * 1024 * 1024) {
+    setError('File size too large. Please select an image under 10MB.');
+    return;
+  }
+  
+  setFile(droppedFile);
+  
+  // Create preview
+  const reader = new FileReader();
+  reader.onload = () => setPreview(reader.result);
+  reader.onerror = () => setError('Unable to preview this file type.');
+  reader.readAsDataURL(droppedFile);
+};
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -285,13 +152,11 @@ const ImageUploader = ({ onUploadSuccess }) => {
         >
           <p>Drag & drop your receipt image here or click to browse</p>
           <p className="text-muted">
-            Supported formats: JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC, HEIF
-            <br />
-            <small>All formats will be optimized for processing • Max 10MB</small>
+            All image formats supported • Max 10MB
           </p>
           <Form.Control 
             type="file" 
-            accept="image/*,.heic,.heif,.bmp,.tiff,.tif"
+            accept="image/*"
             onChange={handleFileChange} 
             style={{ display: 'none' }}
             id="fileInput"
@@ -334,7 +199,7 @@ const ImageUploader = ({ onUploadSuccess }) => {
             <ProgressBar now={uploadProgress} />
             {uploadProgress < 100 && (
               <small className="text-muted mt-1 d-block">
-                {uploadProgress < 50 ? 'Uploading image...' : 'Processing with AI...'}
+                {uploadProgress < 50 ? 'Uploading image...' : 'Processing...'}
               </small>
             )}
           </div>

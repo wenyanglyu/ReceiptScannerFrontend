@@ -583,20 +583,29 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                         <th className="text-end" style={{ minWidth: '80px' }}>Price</th>
                       </tr>
                     </thead>
+                    // Replace the tbody section in your Receipt Details Modal with this corrected version:
                     <tbody>
                       {(currentReceipt.receiptInfo?.items || []).map((item, idx) => (
                         <tr key={idx}>
                           <td style={{ minWidth: '150px' }}>
                             <div className="item-name" style={{ wordWrap: 'break-word', whiteSpace: 'normal' }}>
-                              {item.product_name}
+                              {/* ✅ FIXED: Use correct property names */}
+                              {item.productName || item.casualName || 'Unknown Item'}
                             </div>
                             {item.category && (
                               <small className="text-muted d-block" style={{ wordWrap: 'break-word' }}>
                                 {item.category}
                               </small>
                             )}
+                            {/* ✅ ADDED: Show casual name as subtitle if different from product name */}
+                            {item.casualName && item.casualName !== item.productName && (
+                              <small className="text-info d-block" style={{ wordWrap: 'break-word' }}>
+                                "{item.casualName}"
+                              </small>
+                            )}
                           </td>
                           <td className="text-center" style={{ minWidth: '80px' }}>
+                            {/* ✅ FIXED: Use correct property names */}
                             {item.quantity} {item.unit}
                           </td>
                           <td className="text-end fw-bold" style={{ minWidth: '80px' }}>
