@@ -96,7 +96,7 @@ function App() {
           />
         )}
 
-        {activeTab === 'dashboard' && !isMobile && (
+        {activeTab === 'dashboard' && (
           <Dashboard />
         )}
 
