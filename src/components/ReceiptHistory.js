@@ -24,6 +24,23 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
     // Auto-detect device type and set appropriate default view
     return window.innerWidth >= 768 ? 'table' : 'cards';
   });
+  const getWorkingImageUrl = (receipt) => {
+    const imageUrl = receipt.receiptInfo?.imageUrl;
+    const hashId = receipt.imageName;
+    
+    // If it's a Google Drive or Cloudinary URL, use API proxy instead
+    if (imageUrl && (imageUrl.includes('drive.google.com') || imageUrl.includes('cloudinary.com'))) {
+      return `${API_BASE_URL}/receipt/image/${hashId}`;
+    }
+    
+    // If it's already an API proxy URL, use as-is
+    if (imageUrl && imageUrl.startsWith('/api/')) {
+      return `${API_BASE_URL}${imageUrl}`;
+    }
+    
+    // Default to API proxy
+    return `${API_BASE_URL}/receipt/image/${hashId}`;
+  };
 
   useEffect(() => {
     fetchReceipts();
@@ -550,9 +567,10 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
               <Col xs={12} md={5} className="mb-3 mb-md-0">
                 <div className="receipt-image-container mb-3">
                   <img 
-                    src={currentReceipt.receiptInfo?.imageUrl}
+                    src={getWorkingImageUrl(currentReceipt)}  // ✅ Use the helper function
                     alt="Receipt"
                     className="receipt-image"
+                    style={{ maxWidth: '100%', height: 'auto' }}
                     onError={(e) => {
                       e.target.style.display = 'none';
                       const placeholder = e.target.parentNode.querySelector('.image-placeholder');
