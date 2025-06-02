@@ -584,7 +584,6 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                         <th className="text-end" style={{ minWidth: '80px' }}>Price</th>
                       </tr>
                     </thead>
-                    // Replace the tbody section in your Receipt Details Modal with this corrected version:
                     <tbody>
                       {(currentReceipt.receiptInfo?.items || []).map((item, idx) => (
                         <tr key={idx}>
