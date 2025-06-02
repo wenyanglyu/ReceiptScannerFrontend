@@ -186,9 +186,9 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
           <Col xs={7} className="ps-2">
             <div className="receipt-info">
               <h6 className="mb-1 text-truncate receipt-name">
-                {receipt.imageName.length > 20 
-                  ? receipt.imageName.substring(0, 20) + '...' 
-                  : receipt.imageName
+                {receipt.displayName.length > 20 
+                  ? receipt.displayName.substring(0, 20) + '...' 
+                  : receipt.displayName
                 }
               </h6>
               <div className="receipt-details">
@@ -410,8 +410,8 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                             sortConfig.direction === 'ascending' ? '↑' : '↓'
                           )}
                         </th>
-                        <th onClick={() => requestSort('imageName')} className="sortable-header">
-                          Receipt {sortConfig.key === 'imageName' && (
+                        <th onClick={() => requestSort('displayName')} className="sortable-header">
+                          Receipt {sortConfig.key === 'displayName' && (
                             sortConfig.direction === 'ascending' ? '↑' : '↓'
                           )}
                         </th>
@@ -442,7 +442,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                             />
                           </td>
                           <td>{formatDate(receipt.receiptInfo?.date)}</td>
-                          <td>{receipt.imageName}</td>
+                          <td>{receipt.displayName || 'Unknown Receipt'}</td>
                           <td>
                             <Badge bg="info">{receipt.receiptInfo?.items?.length || 0}</Badge>
                           </td>
@@ -542,7 +542,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
         fullscreen="md-down"
       >
         <Modal.Header closeButton>
-          <Modal.Title>Receipt Details</Modal.Title>
+          <Modal.Title>{currentReceipt?.displayName || 'Receipt Details'}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {currentReceipt && (
@@ -567,7 +567,8 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                   />
                 </div>
                 <div className="receipt-info-summary">
-                  <p><strong>Image:</strong> {currentReceipt.imageName}</p>
+                  <p><strong>File:</strong> {currentReceipt.displayName}</p>
+                  <p><strong>ID:</strong> {currentReceipt.imageName}</p>
                   <p><strong>Date:</strong> {formatDate(currentReceipt.receiptInfo?.date)}</p>
                   <p><strong>Total:</strong> {formatCurrency(currentReceipt.receiptInfo?.calculatedTotal || 0)}</p>
                 </div>
@@ -583,7 +584,8 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                         <th className="text-end" style={{ minWidth: '80px' }}>Price</th>
                       </tr>
                     </thead>
-                  <tbody>
+                    // Replace the tbody section in your Receipt Details Modal with this corrected version:
+                    <tbody>
                       {(currentReceipt.receiptInfo?.items || []).map((item, idx) => (
                         <tr key={idx}>
                           <td style={{ minWidth: '150px' }}>
