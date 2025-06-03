@@ -73,14 +73,9 @@ function App() {
               {receiptData && (
                 <Nav.Link onClick={() => setActiveTab('edit')}>Edit Receipt</Nav.Link>
               )}
-              {/*
               {!isMobile && (
                 <Nav.Link onClick={() => setActiveTab('dashboard')}>Dashboard</Nav.Link>
               )}
-              */}
-              
-              <Nav.Link onClick={() => setActiveTab('dashboard')}>Dashboard</Nav.Link>
-
               <Nav.Link onClick={() => setActiveTab('history')}>Receipt History</Nav.Link>
             </Nav>
           </Navbar.Collapse>
