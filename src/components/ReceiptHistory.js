@@ -1,17 +1,20 @@
-// src/components/ReceiptHistory.js
 import React, { useState, useEffect } from 'react';
 import { 
   Table, Button, Badge, Card, Row, Col, Modal, Form, Alert, 
-  ButtonGroup, Dropdown, InputGroup, Offcanvas 
+  ButtonGroup, Dropdown, Offcanvas 
 } from 'react-bootstrap';
 import axios from 'axios';
-import './ReceiptHistory.css';
 
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
-  const [receipts, setReceipts] = useState([]);
-  const [loading, setLoading] = useState(true);
+const ReceiptHistory = ({ 
+  receiptsData = [],
+  onEditReceipt, 
+  onAddNewReceipt,
+  isAuthenticated = false,
+  userToken = null
+}) => {
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
   const [selectedReceipts, setSelectedReceipts] = useState([]);
@@ -21,31 +24,27 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   const [filterStore, setFilterStore] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState(() => {
-    // Auto-detect device type and set appropriate default view
     return window.innerWidth >= 768 ? 'table' : 'cards';
   });
+
   const getWorkingImageUrl = (receipt) => {
-    const imageUrl = receipt.receiptInfo?.imageUrl;
+    const imageUrl = receipt.receiptInfo?.imageUrl || receipt.receiptInfo?.ImageUrl;
     const hashId = receipt.imageName;
     
-    // If it's a Google Drive or Cloudinary URL, use API proxy instead
-    if (imageUrl && (imageUrl.includes('drive.google.com') || imageUrl.includes('cloudinary.com'))) {
+    // For sample/local images
+    if (imageUrl && imageUrl.startsWith('/data/')) {
+      return imageUrl;
+    }
+    
+    // For authenticated receipts, use API proxy
+    if (isAuthenticated && hashId) {
       return `${API_BASE_URL}/receipt/image/${hashId}`;
     }
     
-    // If it's already an API proxy URL, use as-is
-    if (imageUrl && imageUrl.startsWith('/api/')) {
-      return `${API_BASE_URL}${imageUrl}`;
-    }
-    
-    // Default to API proxy
-    return `${API_BASE_URL}/receipt/image/${hashId}`;
+    return imageUrl || '/placeholder-receipt.png';
   };
 
   useEffect(() => {
-    fetchReceipts();
-    
-    // Handle window resize to automatically switch view modes
     const handleResize = () => {
       const newViewMode = window.innerWidth >= 768 ? 'table' : 'cards';
       setViewMode(newViewMode);
@@ -54,19 +53,6 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  const fetchReceipts = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get(`${API_BASE_URL}/Receipt`);
-      setReceipts(response.data);
-      setLoading(false);
-    } catch (err) {
-      console.error('Error fetching receipts:', err);
-      setError('Failed to load receipts. Please try again.');
-      setLoading(false);
-    }
-  };
 
   const requestSort = (key) => {
     let direction = 'ascending';
@@ -77,7 +63,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   };
 
   const getSortedItems = () => {
-    const sortableItems = [...receipts];
+    const sortableItems = [...receiptsData];
     if (sortConfig.key) {
       sortableItems.sort((a, b) => {
         const aValue = getValueByPath(a, sortConfig.key);
@@ -113,10 +99,10 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   };
 
   const toggleSelectAll = () => {
-    if (selectedReceipts.length === receipts.length) {
+    if (selectedReceipts.length === receiptsData.length) {
       setSelectedReceipts([]);
     } else {
-      setSelectedReceipts(receipts.map(receipt => receipt.imageName));
+      setSelectedReceipts(receiptsData.map(receipt => receipt.imageName));
     }
   };
 
@@ -148,10 +134,10 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   };
 
   const getSelectedTotal = () => {
-    return receipts
+    return receiptsData
       .filter(receipt => isSelected(receipt.imageName))
       .reduce((total, receipt) => {
-        const calculatedTotal = receipt.receiptInfo?.calculatedTotal;
+        const calculatedTotal = receipt.receiptInfo?.calculatedTotal || receipt.receiptInfo?.CalculatedTotal;
         const value = typeof calculatedTotal === 'number' ? calculatedTotal : 
                      (calculatedTotal ? parseFloat(calculatedTotal) : 0);
         return total + value;
@@ -159,23 +145,42 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   };
 
   const handleDeleteSelected = async () => {
+    if (selectedReceipts.length === 0) return;
+
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      setError('Please sign in to delete receipts permanently');
+      return;
+    }
+
     if (window.confirm(`Are you sure you want to delete ${selectedReceipts.length} receipt(s)?`)) {
       try {
         setLoading(true);
+
         const response = await axios.post(`${API_BASE_URL}/Receipt/delete-multiple`, {
           imageNames: selectedReceipts
+        }, {
+          headers: {
+            'Authorization': `Bearer ${userToken}`,
+            'Content-Type': 'application/json'
+          }
         });
         
         if (response.data.success) {
-          fetchReceipts();
           setSelectedReceipts([]);
-          alert(`Successfully deleted ${response.data.deletedCount} receipt(s)`);
+          setError('');
+          // Parent component will refresh data
+          window.location.reload(); // Simple refresh for now
         } else {
           setError('Failed to delete receipts. Please try again.');
         }
       } catch (err) {
         console.error('Error deleting receipts:', err);
-        setError(`Failed to delete receipts: ${err.message}`);
+        if (err.response?.status === 401) {
+          setError('Authentication failed. Please sign in again.');
+        } else {
+          setError(`Failed to delete receipts: ${err.response?.data?.message || err.message}`);
+        }
       } finally {
         setLoading(false);
       }
@@ -184,12 +189,62 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
 
   const sortedReceipts = getSortedItems();
 
+  // Show empty state when authenticated user has no data
+  if (isAuthenticated && receiptsData.length === 0) {
+    return (
+      <Card className="text-center py-5">
+        <Card.Body>
+          <div className="welcome-screen">
+            <div className="welcome-icon mb-4" style={{ fontSize: '4rem' }}>📄</div>
+            <h2>Welcome to Receipt Scanner!</h2>
+            <p className="text-muted mb-4">
+              Get started by uploading your first receipt
+            </p>
+            
+            <div className="d-grid gap-2 col-6 mx-auto">
+              <Button 
+                variant="primary" 
+                size="lg"
+                onClick={() => onAddNewReceipt()}
+              >
+                📤 Upload Your First Receipt
+              </Button>
+            </div>
+            
+            <div className="features-preview mt-5">
+              <h6>What you'll get:</h6>
+              <div className="row text-center mt-3">
+                <div className="col-md-4">
+                  <div className="feature-item">
+                    <div style={{ fontSize: '2rem' }}>🤖</div>
+                    <small>AI Processing</small>
+                  </div>
+                </div>
+                <div className="col-md-4">
+                  <div className="feature-item">
+                    <div style={{ fontSize: '2rem' }}>📊</div>
+                    <small>Smart Analytics</small>
+                  </div>
+                </div>
+                <div className="col-md-4">
+                  <div className="feature-item">
+                    <div style={{ fontSize: '2rem' }}>☁️</div>
+                    <small>Cloud Storage</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card.Body>
+      </Card>
+    );
+  }
+
   // Mobile Card Component for Individual Receipt
   const ReceiptCard = ({ receipt }) => (
     <Card className="receipt-card mb-3 shadow-sm">
       <Card.Body className="p-3">
         <Row className="align-items-center">
-          {/* Selection Checkbox */}
           <Col xs={1} className="pe-2">
             <Form.Check 
               type="checkbox"
@@ -199,32 +254,32 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
             />
           </Col>
           
-          {/* Receipt Info */}
           <Col xs={7} className="ps-2">
             <div className="receipt-info">
-              <h6 className="mb-1 text-truncate receipt-name">
-                {receipt.displayName.length > 20 
-                  ? receipt.displayName.substring(0, 20) + '...' 
-                  : receipt.displayName
-                }
-              </h6>
+              <div className="d-flex align-items-center mb-1">
+                <h6 className="mb-0 text-truncate receipt-name me-2">
+                  {(receipt.displayName || receipt.imageName).length > 20 
+                    ? (receipt.displayName || receipt.imageName).substring(0, 20) + '...' 
+                    : (receipt.displayName || receipt.imageName)
+                  }
+                </h6>
+              </div>
               <div className="receipt-details">
                 <small className="text-muted d-block">
-                  📅 {formatDate(receipt.receiptInfo?.date)}
+                  📅 {formatDate(receipt.receiptInfo?.date || receipt.receiptInfo?.Date)}
                 </small>
                 <div className="mt-1">
                   <Badge bg="info" className="me-2">
-                    {receipt.receiptInfo?.items?.length || 0} items
+                    {(receipt.receiptInfo?.items || receipt.receiptInfo?.Items || []).length} items
                   </Badge>
                   <span className="fw-bold text-success">
-                    {formatCurrency(receipt.receiptInfo?.calculatedTotal || 0)}
+                    {formatCurrency(receipt.receiptInfo?.calculatedTotal || receipt.receiptInfo?.CalculatedTotal || 0)}
                   </span>
                 </div>
               </div>
             </div>
           </Col>
           
-          {/* Action Buttons */}
           <Col xs={4} className="text-end">
             <Button 
               variant="outline-primary" 
@@ -232,7 +287,15 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
               className="receipt-actions-btn"
               onClick={() => handleViewReceipt(receipt)}
             >
-              View Details
+              View
+            </Button>
+            <Button 
+              variant="outline-success" 
+              size="sm"
+              className="receipt-actions-btn mt-1"
+              onClick={() => handleEditReceipt(receipt)}
+            >
+              Edit
             </Button>
           </Col>
         </Row>
@@ -243,14 +306,15 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
   return (
     <>
       <Card className="receipt-history-card">
-        {/* Header */}
         <Card.Header className="p-3">
           <Row className="align-items-center">
             <Col xs={6}>
               <h4 className="mb-0">Receipts</h4>
+              <small className="text-muted">
+                {receiptsData.length} total
+              </small>
             </Col>
             <Col xs={6} className="text-end">
-              {/* Mobile: Compact header buttons */}
               <div className="d-md-none">
                 <ButtonGroup size="sm">
                   <Button 
@@ -269,7 +333,6 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                 </ButtonGroup>
               </div>
               
-              {/* Desktop: Full buttons */}
               <div className="d-none d-md-block">
                 <Button 
                   variant="primary" 
@@ -290,9 +353,8 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
         </Card.Header>
 
         <Card.Body className="p-3">
-          {error && <Alert variant="danger">{error}</Alert>}
-          
-          {/* Desktop Filters */}
+          {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
+                         
           {showFilters && (
             <Card className="mb-3 filter-card">
               <Card.Body className="p-3">
@@ -341,7 +403,6 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
             </Card>
           )}
           
-          {/* Selection Summary */}
           {selectedReceipts.length > 0 && (
             <Alert variant="primary" className="d-flex justify-content-between align-items-center p-2 mb-3">
               <div>
@@ -358,23 +419,23 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
             </Alert>
           )}
           
-          {/* Content */}
           {loading ? (
             <div className="text-center py-4">
-              <p>Loading receipts...</p>
+              <div className="spinner-border text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              <p className="mt-2">Loading receipts...</p>
             </div>
           ) : (
             <>
-              {/* Mobile Card View (for mobile devices) */}
               {viewMode === 'cards' && (
                 <div className="receipt-cards-container">
-                  {/* Select All for Mobile */}
                   <div className="d-flex justify-content-between align-items-center mb-3">
                     <Form.Check 
                       type="checkbox"
-                      label="Select All"
+                      label={`Select All (${receiptsData.length})`}
                       onChange={toggleSelectAll}
-                      checked={selectedReceipts.length === receipts.length && receipts.length > 0}
+                      checked={selectedReceipts.length === receiptsData.length && receiptsData.length > 0}
                       className="fw-bold"
                     />
                     <Dropdown>
@@ -402,14 +463,22 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                   {sortedReceipts.length === 0 && (
                     <Card className="text-center py-4">
                       <Card.Body>
-                        <p className="mb-0 text-muted">No receipts found</p>
+                        <h6 className="text-muted mb-2">No Receipts Found</h6>
+                        <p className="mb-3 text-muted">
+                          Upload your first receipt to get started.
+                        </p>
+                        <Button 
+                          variant="primary"
+                          onClick={() => onAddNewReceipt()}
+                        >
+                          Upload Receipt
+                        </Button>
                       </Card.Body>
                     </Card>
                   )}
                 </div>
               )}
               
-              {/* Desktop Table View (for desktop devices) */}
               {viewMode === 'table' && (
                 <div className="table-responsive">
                   <Table striped bordered hover>
@@ -419,7 +488,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                           <Form.Check 
                             type="checkbox"
                             onChange={toggleSelectAll}
-                            checked={selectedReceipts.length === receipts.length && receipts.length > 0}
+                            checked={selectedReceipts.length === receiptsData.length && receiptsData.length > 0}
                           />
                         </th>
                         <th onClick={() => requestSort('receiptInfo.date')} className="sortable-header">
@@ -458,12 +527,14 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                               onChange={() => toggleReceiptSelection(receipt)}
                             />
                           </td>
-                          <td>{formatDate(receipt.receiptInfo?.date)}</td>
-                          <td>{receipt.displayName || 'Unknown Receipt'}</td>
+                          <td>{formatDate(receipt.receiptInfo?.date || receipt.receiptInfo?.Date)}</td>
+                          <td>{receipt.displayName || receipt.imageName || 'Unknown Receipt'}</td>
                           <td>
-                            <Badge bg="info">{receipt.receiptInfo?.items?.length || 0}</Badge>
+                            <Badge bg="info">
+                              {(receipt.receiptInfo?.items || receipt.receiptInfo?.Items || []).length}
+                            </Badge>
                           </td>
-                          <td>{formatCurrency(receipt.receiptInfo?.calculatedTotal || 0)}</td>
+                          <td>{formatCurrency(receipt.receiptInfo?.calculatedTotal || receipt.receiptInfo?.CalculatedTotal || 0)}</td>
                           <td>
                             <Button 
                               variant="outline-primary" 
@@ -471,7 +542,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                               className="me-1"
                               onClick={() => handleViewReceipt(receipt)}
                             >
-                              View Details
+                              View
                             </Button>
                             <Button 
                               variant="outline-success" 
@@ -485,7 +556,20 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                       ))}
                       {sortedReceipts.length === 0 && (
                         <tr>
-                          <td colSpan="6" className="text-center">No receipts found</td>
+                          <td colSpan="6" className="text-center py-4">
+                            <div>
+                              <h6 className="text-muted mb-2">No Receipts Found</h6>
+                              <p className="mb-3 text-muted">
+                                Upload your first receipt to get started.
+                              </p>
+                              <Button 
+                                variant="primary"
+                                onClick={() => onAddNewReceipt()}
+                              >
+                                Upload Receipt
+                              </Button>
+                            </div>
+                          </td>
                         </tr>
                       )}
                     </tbody>
@@ -551,7 +635,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
         </Offcanvas.Body>
       </Offcanvas>
 
-      {/* Receipt Details Modal - Responsive */}
+      {/* Receipt Details Modal */}
       <Modal 
         show={showViewModal} 
         onHide={() => setShowViewModal(false)}
@@ -559,7 +643,9 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
         fullscreen="md-down"
       >
         <Modal.Header closeButton>
-          <Modal.Title>{currentReceipt?.displayName || 'Receipt Details'}</Modal.Title>
+          <Modal.Title>
+            {currentReceipt?.displayName || currentReceipt?.imageName || 'Receipt Details'}
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {currentReceipt && (
@@ -567,10 +653,10 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
               <Col xs={12} md={5} className="mb-3 mb-md-0">
                 <div className="receipt-image-container mb-3">
                   <img 
-                    src={getWorkingImageUrl(currentReceipt)}  // ✅ Use the helper function
+                    src={getWorkingImageUrl(currentReceipt)}
                     alt="Receipt"
                     className="receipt-image"
-                    style={{ maxWidth: '100%', height: 'auto' }}
+                    style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px' }}
                     onError={(e) => {
                       e.target.style.display = 'none';
                       const placeholder = e.target.parentNode.querySelector('.image-placeholder');
@@ -578,6 +664,7 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                         const div = document.createElement('div');
                         div.className = 'image-placeholder d-flex align-items-center justify-content-center bg-light text-muted p-4';
                         div.style.minHeight = '200px';
+                        div.style.borderRadius = '8px';
                         div.innerHTML = '<div class="text-center"><i class="fas fa-image fa-2x mb-2"></i><br>Image Not Available</div>';
                         e.target.parentNode.appendChild(div);
                       }
@@ -585,14 +672,13 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                   />
                 </div>
                 <div className="receipt-info-summary">
-                  <p><strong>File:</strong> {currentReceipt.displayName}</p>
-                  <p><strong>ID:</strong> {currentReceipt.imageName}</p>
-                  <p><strong>Date:</strong> {formatDate(currentReceipt.receiptInfo?.date)}</p>
-                  <p><strong>Total:</strong> {formatCurrency(currentReceipt.receiptInfo?.calculatedTotal || 0)}</p>
+                  <p><strong>File:</strong> {currentReceipt.displayName || currentReceipt.imageName}</p>
+                  <p><strong>Date:</strong> {formatDate(currentReceipt.receiptInfo?.date || currentReceipt.receiptInfo?.Date)}</p>
+                  <p><strong>Total:</strong> {formatCurrency(currentReceipt.receiptInfo?.calculatedTotal || currentReceipt.receiptInfo?.CalculatedTotal || 0)}</p>
                 </div>
               </Col>
               <Col xs={12} md={7}>
-                <h5>Items ({currentReceipt.receiptInfo?.items?.length || 0})</h5>
+                <h5>Items ({(currentReceipt.receiptInfo?.items || currentReceipt.receiptInfo?.Items || []).length})</h5>
                 <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                   <Table striped size="sm">
                     <thead className="sticky-top bg-white">
@@ -603,31 +689,29 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {(currentReceipt.receiptInfo?.items || []).map((item, idx) => (
+                      {(currentReceipt.receiptInfo?.items || currentReceipt.receiptInfo?.Items || []).map((item, idx) => (
                         <tr key={idx}>
                           <td style={{ minWidth: '150px' }}>
                             <div className="item-name" style={{ wordWrap: 'break-word', whiteSpace: 'normal' }}>
-                              {/* ✅ FIXED: Use correct property names */}
-                              {item.productName || item.casualName || 'Unknown Item'}
+                              {item.productName || item.ProductName || item.casualName || item.CasualName || 'Unknown Item'}
                             </div>
-                            {item.category && (
+                            {(item.category || item.Category) && (
                               <small className="text-muted d-block" style={{ wordWrap: 'break-word' }}>
-                                {item.category}
+                                {item.category || item.Category}
                               </small>
                             )}
-                            {/* ✅ ADDED: Show casual name as subtitle if different from product name */}
-                            {item.casualName && item.casualName !== item.productName && (
+                            {(item.casualName || item.CasualName) && 
+                             (item.casualName || item.CasualName) !== (item.productName || item.ProductName) && (
                               <small className="text-info d-block" style={{ wordWrap: 'break-word' }}>
-                                "{item.casualName}"
+                                "{item.casualName || item.CasualName}"
                               </small>
                             )}
                           </td>
                           <td className="text-center" style={{ minWidth: '80px' }}>
-                            {/* ✅ FIXED: Use correct property names */}
-                            {item.quantity} {item.unit}
+                            {item.quantity || item.Quantity || 1} {item.unit || item.Unit || 'item'}
                           </td>
                           <td className="text-end fw-bold" style={{ minWidth: '80px' }}>
-                            {formatCurrency(item.price)}
+                            {formatCurrency(item.price || item.Price || 0)}
                           </td>
                         </tr>
                       ))}
@@ -650,6 +734,33 @@ const ReceiptHistory = ({ onEditReceipt, onAddNewReceipt }) => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Custom Styles */}
+      <style jsx>{`
+        .sortable-header {
+          cursor: pointer;
+          user-select: none;
+        }
+        
+        .sortable-header:hover {
+          background-color: #f8f9fa;
+        }
+        
+        .receipt-actions-btn {
+          min-width: 60px;
+        }
+        
+        .welcome-screen .feature-item {
+          padding: 1rem;
+        }
+        
+        @media (max-width: 767.98px) {
+          .receipt-actions-btn {
+            width: 100%;
+            margin-bottom: 0.25rem;
+          }
+        }
+      `}</style>
     </>
   );
 };

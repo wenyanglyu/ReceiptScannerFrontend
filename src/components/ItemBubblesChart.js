@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 // API base URL
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 // 5 premium bubble design variations
 const BUBBLE_DESIGNS = [
@@ -28,7 +28,13 @@ const BUBBLE_DESIGNS = [
   }
 ];
 
-const PhysicsBubblesChart = () => {
+const PhysicsBubblesChart = ({ 
+  receiptsData = [],
+  isAuthenticated = false,
+  isDemoMode = true,
+  processedItems = null,
+  userToken = null
+}) => {
   const svgRef = useRef();
   const containerRef = useRef();
   const viewMode = 'frequency';
@@ -49,7 +55,7 @@ const PhysicsBubblesChart = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const simulationRef = useRef();
 
- useEffect(() => {
+  useEffect(() => {
     const detectInitialContainerSize = () => {
       const container = containerRef.current;
       if (container) {
@@ -60,7 +66,7 @@ const PhysicsBubblesChart = () => {
         // Only update if we get valid real dimensions
         if (realWidth > 0 && realHeight > 0) {
           setDimensions(prev => {
-            console.log('📐 Initial container detection:', {
+            console.log('[BUBBLES] 📐 Initial container detection:', {
               from: { width: prev.width, height: prev.height, source: prev.source },
               to: { width: realWidth, height: realHeight, source: 'container-initial' }
             });
@@ -90,50 +96,128 @@ const PhysicsBubblesChart = () => {
     };
   }, []); // Run once on mount
   
-  // Fetch real data from API
- useEffect(() => {
-    const fetchItemData = async () => {
+  // Process data based on mode (demo vs authenticated)
+  useEffect(() => {
+    const processData = async () => {
       try {
         setLoading(true);
         setError(null);
-        
-        const response = await fetch(`${API_BASE_URL}/Receipt/stats/items`);
-        
-        if (!response.ok) {
-          throw new Error(`API Error: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        const maxItems = isMobile ? 20 : 100;
 
-        const formattedData = data
-          .map(item => ({
-            name: item.name || item.itemName || item.item || 'Unknown Item',
-            frequency: item.frequency || item.purchaseCount || item.times || item.count || 0,
-            totalSpent: parseFloat(item.totalSpent || item.totalAmount || item.amount || item.total || 0)
-          }))
-          .sort((a, b) => b.frequency - a.frequency)
-          .slice(0, maxItems);
-        
-        if (formattedData.length === 0) {
-          throw new Error('No items found in API response');
+        console.log('[BUBBLES] Processing data:', {
+          isDemoMode,
+          isAuthenticated,
+          receiptsDataLength: receiptsData?.length || 0,
+          processedItemsLength: processedItems?.length || 0
+        });
+
+        if (isDemoMode && receiptsData && receiptsData.length > 0) {
+          // Use demo/anonymous data directly
+          console.log('[BUBBLES] Processing demo data:', receiptsData.length, 'receipts');
+          
+          // Use pre-processed items if available, otherwise calculate
+          let items = processedItems || [];
+          if (!processedItems || processedItems.length === 0) {
+            console.log('[BUBBLES] No processed items, calculating from receipts...');
+            
+            const allItems = receiptsData.flatMap(receipt => 
+              receipt.receiptInfo?.items || receipt.receiptInfo?.Items || []
+            );
+
+            console.log('[BUBBLES] Found', allItems.length, 'total items');
+
+            const itemCounts = {};
+            const itemSpending = {};
+            
+            allItems.forEach(item => {
+              const name = (item.casualName || item.CasualName || item.productName || item.ProductName || 'unknown').toLowerCase().trim();
+              const price = parseFloat(item.price || item.Price || 0);
+              
+              itemCounts[name] = (itemCounts[name] || 0) + 1;
+              itemSpending[name] = (itemSpending[name] || 0) + price;
+            });
+
+            items = Object.entries(itemCounts)
+              .map(([name, frequency]) => ({
+                name,
+                frequency,
+                totalSpent: itemSpending[name] || 0
+              }))
+              .sort((a, b) => b.frequency - a.frequency)
+              .slice(0, isMobile ? 20 : 100);
+          } else {
+            // Convert processed items to expected format
+            items = processedItems
+              .map(item => ({
+                name: item.name || item.text || 'Unknown',
+                frequency: item.frequency || item.value || item.count || 0,
+                totalSpent: item.totalSpent || item.amount || 0
+              }))
+              .sort((a, b) => b.frequency - a.frequency)
+              .slice(0, isMobile ? 20 : 100);
+          }
+
+          console.log('[BUBBLES] Demo data processed:', items.length, 'items');
+          setItemData(items);
+          setLoading(false);
+
+        } else if (isAuthenticated && !isDemoMode) {
+          // Fetch from API for authenticated users
+          console.log('[BUBBLES] Fetching authenticated data from API');
+          
+          const headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          };
+          
+          if (userToken) {
+            headers['Authorization'] = `Bearer ${userToken}`;
+          }
+          
+          const response = await fetch(`${API_BASE_URL}/Receipt/stats/items`, { headers });
+          
+          if (!response.ok) {
+            throw new Error(`API Error: ${response.status} ${response.statusText}`);
+          }
+          
+          const data = await response.json();
+          const maxItems = isMobile ? 20 : 100;
+
+          const formattedData = data
+            .map(item => ({
+              name: item.name || item.itemName || item.item || 'Unknown Item',
+              frequency: item.frequency || item.purchaseCount || item.times || item.count || 0,
+              totalSpent: parseFloat(item.totalSpent || item.totalAmount || item.amount || item.total || 0)
+            }))
+            .sort((a, b) => b.frequency - a.frequency)
+            .slice(0, maxItems);
+          
+          if (formattedData.length === 0) {
+            throw new Error('No items found in API response');
+          }
+          
+          console.log('[BUBBLES] API data processed:', formattedData.length, 'items');
+          setItemData(formattedData);
+          setLoading(false);
+          
+        } else {
+          // No data available or mixed mode
+          console.log('[BUBBLES] No data available or mixed mode');
+          setItemData([]);
+          setLoading(false);
         }
-        
-        setItemData(formattedData);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching item data:', error);
-        setError(`Failed to load data: ${error.message}`);
+
+      } catch (err) {
+        console.error('[BUBBLES] Error processing data:', err);
+        setError(`Failed to load item data: ${err.message}`);
         setLoading(false);
       }
     };
 
-    fetchItemData();
-  }, [isMobile]);
+    processData();
+  }, [receiptsData, isAuthenticated, isDemoMode, processedItems, isMobile, userToken]);
   
   // Handle window resize and mobile detection
- // Correct: SINGLE useEffect for resize and dimension setup
- useEffect(() => {
+  useEffect(() => {
     const handleResize = () => {
       const container = containerRef.current;
       if (container) {
@@ -148,7 +232,7 @@ const PhysicsBubblesChart = () => {
             const heightDiff = Math.abs(prev.height - realHeight);
             
             if (widthDiff > 10 || heightDiff > 10) {
-              console.log('📐 Resize container detection:', {
+              console.log('[BUBBLES] 📐 Resize container detection:', {
                 from: { width: prev.width, height: prev.height, source: prev.source },
                 to: { width: realWidth, height: realHeight, source: 'container-resize' }
               });
@@ -171,9 +255,6 @@ const PhysicsBubblesChart = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-
-
-
   useEffect(() => {
     if (!itemData.length || loading || error) return;
     
@@ -182,11 +263,12 @@ const PhysicsBubblesChart = () => {
 
     const { width, height, source } = dimensions;
 
-    console.log('=== PHYSICS DEBUG ===');
-    console.log('SVG width:', width);
-    console.log('SVG height:', height);
-    console.log('Mobile mode:', isMobile);
-    console.log('Dimension source:', source);
+    console.log('[BUBBLES] === PHYSICS DEBUG ===');
+    console.log('[BUBBLES] SVG width:', width);
+    console.log('[BUBBLES] SVG height:', height);
+    console.log('[BUBBLES] Mobile mode:', isMobile);
+    console.log('[BUBBLES] Dimension source:', source);
+    console.log('[BUBBLES] Data points:', itemData.length);
     
     // Calculate bubble sizes based on data values with 1x to 4x scaling
     const maxValue = viewMode === 'frequency' 
@@ -295,7 +377,6 @@ const PhysicsBubblesChart = () => {
       .velocityDecay(isMobile ? 0.88 : 0.92)
       .alphaDecay(0.002);
 
-
     const movementForce = () => {
       nodes.forEach(d => {
         const forceStrength = isMobile ? 0.05 : 0.15;
@@ -310,7 +391,8 @@ const PhysicsBubblesChart = () => {
 
     simulation.force('movement', movementForce);
     simulationRef.current = simulation;
-// After creating the simulation, add this:
+
+    // After creating the simulation, add this:
     setTimeout(() => {
       // Reposition bubbles randomly after container is ready
       nodes.forEach(d => {
@@ -323,6 +405,7 @@ const PhysicsBubblesChart = () => {
       // Restart simulation with new positions
       simulation.alpha(0.8).restart();
     }, 100); // Small delay to ensure container is ready
+    
     const container = svg.append('g');
     const bubbleGroups = container.selectAll('.bubble-group')
       .data(nodes)
@@ -479,32 +562,31 @@ const PhysicsBubblesChart = () => {
     });
 
     simulation.on('tick', () => {
-  const stuckThreshold = 5;
+      const stuckThreshold = 5;
 
-  nodes.forEach(d => {
-    const nearTopLeft = d.x < 50 && d.y < 50;
-    const tooStill = Math.abs(d.vx) + Math.abs(d.vy) < 0.1;
+      nodes.forEach(d => {
+        const nearTopLeft = d.x < 50 && d.y < 50;
+        const tooStill = Math.abs(d.vx) + Math.abs(d.vy) < 0.1;
 
-    if (nearTopLeft && tooStill) {
-      // Force kick out of top-left
-      d.vx = (Math.random() - 0.5) * stuckThreshold;
-      d.vy = (Math.random() - 0.5) * stuckThreshold;
-      d.x = 100 + Math.random() * 100;
-      d.y = 100 + Math.random() * 100;
-    }
-  });
+        if (nearTopLeft && tooStill) {
+          // Force kick out of top-left
+          d.vx = (Math.random() - 0.5) * stuckThreshold;
+          d.vy = (Math.random() - 0.5) * stuckThreshold;
+          d.x = 100 + Math.random() * 100;
+          d.y = 100 + Math.random() * 100;
+        }
+      });
 
-  if (isMobile) {
-    const safeMargin = 8;
-    nodes.forEach(d => {
-      d.x = Math.max(d.radius + safeMargin, Math.min(width - d.radius - safeMargin, d.x));
-      d.y = Math.max(d.radius + safeMargin, Math.min(height - d.radius - safeMargin, d.y));
+      if (isMobile) {
+        const safeMargin = 8;
+        nodes.forEach(d => {
+          d.x = Math.max(d.radius + safeMargin, Math.min(width - d.radius - safeMargin, d.x));
+          d.y = Math.max(d.radius + safeMargin, Math.min(height - d.radius - safeMargin, d.y));
+        });
+      }
+
+      bubbleGroups.attr('transform', d => `translate(${d.x}, ${d.y})`);
     });
-  }
-
-  bubbleGroups.attr('transform', d => `translate(${d.x}, ${d.y})`);
-});
-
 
     const restartInterval = isMobile ? 4000 : 2000;
     const keepAlive = setInterval(() => {
@@ -543,7 +625,12 @@ const PhysicsBubblesChart = () => {
             animation: 'spin 1s linear infinite',
             margin: '0 auto 1rem'
           }} />
-          <p>Loading item data...</p>
+          <p>Loading popular items...</p>
+          {isDemoMode && (
+            <small style={{ color: '#ccc' }}>
+              {isAuthenticated ? 'Loading your saved items...' : 'Processing demo data...'}
+            </small>
+          )}
         </div>
       </div>
     );
@@ -559,21 +646,27 @@ const PhysicsBubblesChart = () => {
         color: '#c33',
         textAlign: 'center'
       }}>
-        <h3>Error Loading Data</h3>
+        <h3>Error Loading Item Data</h3>
         <p>{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
-          style={{
-            padding: '0.5rem 1rem',
-            background: '#c33',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.5rem',
-            cursor: 'pointer'
-          }}
-        >
-          Retry
-        </button>
+        {!isDemoMode ? (
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '0.5rem 1rem',
+              background: '#c33',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.5rem',
+              cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
+        ) : (
+          <p style={{ color: '#666', fontSize: '0.9em' }}>
+            Demo mode: Try uploading receipts to see popular items
+          </p>
+        )}
       </div>
     );
   }
@@ -582,20 +675,33 @@ const PhysicsBubblesChart = () => {
     return (
       <div style={{
         padding: '2rem',
-        background: '#e6f3ff',
+        background: isDemoMode ? '#e6f3ff' : '#f8f9fa',
         border: '1px solid #b3d9ff',
         borderRadius: '1rem',
         color: '#0066cc',
         textAlign: 'center'
       }}>
-        No item data available. Upload some receipts to see popular items.
+        <h5>No Popular Items Yet</h5>
+        <p className="mb-0">
+          {isDemoMode 
+            ? isAuthenticated
+              ? "Upload some receipts to see your most frequently purchased items as interactive bubbles."
+              : "Upload receipts to see popular items, or sign in to save your data permanently."
+            : "Upload some receipts to see your most frequently purchased items as interactive bubbles."
+          }
+        </p>
+        {isDemoMode && !isAuthenticated && (
+          <small style={{ color: '#666', marginTop: '0.5rem', display: 'block' }}>
+            Demo Mode: Items will be shown temporarily during this session
+          </small>
+        )}
       </div>
     );
   }
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-     <div 
+      <div 
         ref={containerRef}
         style={{ 
           position: 'relative',

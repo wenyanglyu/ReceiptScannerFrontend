@@ -5,165 +5,477 @@ import {
   Cell,
   Tooltip,
   ResponsiveContainer,
+  Legend
 } from 'recharts';
-import { Wordcloud } from '@visx/wordcloud';
-import { scaleLog } from '@visx/scale';
-import { Text } from '@visx/text';
-import { Row, Col } from 'react-bootstrap';
-import axios from 'axios';
-
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
 
 const COLORS = [
   '#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28CDB',
-  '#FF6B6B', '#4D908E', '#FB8072', '#80B1D3', '#FDB462'
+  '#FF6B6B', '#4D908E', '#FB8072', '#80B1D3', '#FDB462',
+  '#B3DE69', '#FCCDE5', '#D9D9D9', '#BC80BD', '#CCEBC5'
 ];
 
-const CategoryPieChart = () => {
+const CategoryPieChart = ({ 
+  receiptsData, 
+  isAuthenticated, 
+  isDemoMode, 
+  processedCategories, 
+  processedItems,
+  userToken 
+}) => {
   const [pieData, setPieData] = useState([]);
   const [wordCloudData, setWordCloudData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Category consolidation mapping - handles your actual category names
+  const consolidateCategories = (categories) => {
+    const consolidated = {};
+    
+    categories.forEach(category => {
+      let normalizedName = category.name;
+      
+      // Consolidate similar categories based on your receipts.json data
+      if (['Vegetables', 'Veges', 'Vegetable'].includes(category.name)) {
+        normalizedName = 'Vegetables';
+      } else if (['Fruits', 'Fruit'].includes(category.name)) {
+        normalizedName = 'Fruits';
+      } else if (['Drinks', 'Beverages', 'Beverage'].includes(category.name)) {
+        normalizedName = 'Beverages';
+      } else if (['Meat', 'Meats', 'Seafood'].includes(category.name)) {
+        normalizedName = 'Meat & Seafood';
+      } else if (['Bakery', 'Bread', 'Baked Goods'].includes(category.name)) {
+        normalizedName = 'Bakery';
+      } else if (['Household'].includes(category.name)) {
+        normalizedName = 'Household';
+      } else if (['Dairy'].includes(category.name)) {
+        normalizedName = 'Dairy';
+      } else if (['Snacks'].includes(category.name)) {
+        normalizedName = 'Snacks';
+      } else if (['Other'].includes(category.name)) {
+        normalizedName = 'Other';
+      }
+      
+      consolidated[normalizedName] = (consolidated[normalizedName] || 0) + category.value;
+    });
+    
+    return Object.entries(consolidated)
+      .map(([name, value]) => ({
+        name,
+        value: Math.round(value * 100) / 100
+      }))
+      .filter(item => item.value > 0) // Remove zero-value categories
+      .sort((a, b) => b.value - a.value); // Sort by value descending
+  };
+
   const handlePieClick = (data, index) => {
     console.log('Pie segment clicked:', data, 'at index:', index);
   };
 
-  // Fetch pie chart data (category spending)
+  // Process data based on mode (demo vs authenticated)
   useEffect(() => {
-    const fetchPieData = async () => {
+    const processData = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/Receipt/stats/categories`);
-        setPieData(response.data || []);
+        setLoading(true);
+        setError(null);
+
+        if (isAuthenticated) {
+          // Authenticated mode: fetch from backend API
+          console.log('[CATEGORY] Fetching authenticated data from API');
+          
+          try {
+            const headers = {
+              'Content-Type': 'application/json',
+              ...(userToken && { 'Authorization': `Bearer ${userToken}` })
+            };
+
+            // Fetch categories from API
+            const categoriesResponse = await fetch(
+              `${process.env.REACT_APP_API_BASE_URL || 'https://receiptscannerbackend.onrender.com/api'}/Receipt/stats/categories`,
+              { headers }
+            );
+
+            if (!categoriesResponse.ok) {
+              throw new Error(`Categories API failed: ${categoriesResponse.status}`);
+            }
+
+            const categoriesData = await categoriesResponse.json();
+            
+            // Fetch receipts for word cloud
+            const receiptsResponse = await fetch(
+              `${process.env.REACT_APP_API_BASE_URL || 'https://receiptscannerbackend.onrender.com/api'}/receipt`,
+              { headers }
+            );
+
+            if (!receiptsResponse.ok) {
+              throw new Error(`Receipts API failed: ${receiptsResponse.status}`);
+            }
+
+            const receiptsApiData = await receiptsResponse.json();
+
+            // Process categories
+            const consolidatedCategories = consolidateCategories(categoriesData || []);
+            setPieData(consolidatedCategories);
+
+            // Process word cloud from receipts
+            const allItems = [];
+            Object.values(receiptsApiData || {}).forEach(receipt => {
+              const items = receipt?.Items || receipt?.items || [];
+              allItems.push(...items);
+            });
+
+            const counts = {};
+            allItems.forEach(item => {
+              const name = (item.CasualName || item.casualName || item.ProductName || item.productName || 'unknown').toLowerCase().trim();
+              counts[name] = (counts[name] || 0) + 1;
+            });
+
+            const words = Object.entries(counts)
+              .map(([text, value]) => ({ text, value }))
+              .sort((a, b) => b.value - a.value)
+              .slice(0, 40);
+
+            setWordCloudData(words);
+            setLoading(false);
+
+            console.log('[CATEGORY] API data processed:', {
+              categories: consolidatedCategories.length,
+              wordCloudItems: words.length
+            });
+
+          } catch (apiError) {
+            console.error('[CATEGORY] API Error:', apiError);
+            setError('Failed to load data from server');
+            setLoading(false);
+          }
+
+        } else {
+          // Demo/Anonymous mode: use local receipts.json data
+          console.log('[CATEGORY] Processing demo/anonymous data from receipts.json');
+          
+          if (receiptsData) {
+            // Use pre-processed categories if available, otherwise calculate from receipts.json structure
+            let categories = processedCategories || [];
+            if (!processedCategories || processedCategories.length === 0) {
+              const categoryTotals = {};
+              
+              // Handle receipts.json structure - receiptsData can be object or array
+              if (Array.isArray(receiptsData)) {
+                // If it's already an array (from Dashboard processing)
+                receiptsData.forEach(receipt => {
+                  const receiptInfo = receipt.receiptInfo || receipt;
+                  const items = receiptInfo?.Items || receiptInfo?.items || [];
+                  if (Array.isArray(items)) {
+                    items.forEach(item => {
+                      const category = item.Category || item.category || 'Other';
+                      categoryTotals[category] = (categoryTotals[category] || 0) + (item.Price || item.price || 0);
+                    });
+                  }
+                });
+              } else if (typeof receiptsData === 'object') {
+                // If it's the original receipts.json object structure
+                Object.values(receiptsData).forEach(receipt => {
+                  const items = receipt?.Items || receipt?.items || [];
+                  if (Array.isArray(items)) {
+                    items.forEach(item => {
+                      const category = item.Category || item.category || 'Other';
+                      categoryTotals[category] = (categoryTotals[category] || 0) + (item.Price || item.price || 0);
+                    });
+                  }
+                });
+              }
+              
+              categories = Object.entries(categoryTotals).map(([name, value]) => ({
+                name,
+                value: Math.round(value * 100) / 100
+              }));
+            }
+
+            // Consolidate similar categories
+            const consolidatedCategories = consolidateCategories(categories);
+
+            // Use pre-processed items for word cloud if available, otherwise calculate
+            let items = processedItems || [];
+            if (!processedItems || processedItems.length === 0) {
+              const allItems = [];
+              
+              // Handle both array and object structures for receipts
+              if (Array.isArray(receiptsData)) {
+                receiptsData.forEach(receipt => {
+                  const receiptInfo = receipt.receiptInfo || receipt;
+                  const receiptItems = receiptInfo?.Items || receiptInfo?.items || [];
+                  allItems.push(...receiptItems);
+                });
+              } else if (typeof receiptsData === 'object') {
+                Object.values(receiptsData).forEach(receipt => {
+                  const receiptItems = receipt?.Items || receipt?.items || [];
+                  allItems.push(...receiptItems);
+                });
+              }
+
+              const counts = {};
+              allItems.forEach(item => {
+                const name = (item.CasualName || item.casualName || item.ProductName || item.productName || 'unknown').toLowerCase().trim();
+                counts[name] = (counts[name] || 0) + 1;
+              });
+
+              items = Object.entries(counts)
+                .map(([text, value]) => ({ text, value }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 40);
+            } else {
+              items = items
+                .map(item => ({
+                  text: item.name.toLowerCase().trim(),
+                  value: item.frequency
+                }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 40);
+            }
+
+            setPieData(consolidatedCategories);
+            setWordCloudData(items);
+            setLoading(false);
+            
+            console.log('[CATEGORY] Demo data processed:', {
+              categories: consolidatedCategories.length,
+              wordCloudItems: items.length
+            });
+
+          } else {
+            // No data available
+            setPieData([]);
+            setWordCloudData([]);
+            setLoading(false);
+          }
+        }
+
       } catch (err) {
-        console.error('Error fetching category data:', err);
+        console.error('[CATEGORY] Error processing data:', err);
         setError('Failed to load category data');
-      } finally {
         setLoading(false);
       }
     };
-    fetchPieData();
-  }, []);
 
-  // Fetch word cloud data (casualName frequency)
-  useEffect(() => {
-    const fetchWordCloud = async () => {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/receipt`);
-        const allReceipts = response.data || [];
-        const allItems = allReceipts.flatMap(r => r.receiptInfo?.items || []);
+    processData();
+  }, [receiptsData, isAuthenticated, isDemoMode, processedCategories, processedItems, userToken]);
 
-        const counts = {};
-        allItems.forEach(item => {
-          const name = item.casualName?.toLowerCase().trim() || 'unknown';
-          counts[name] = (counts[name] || 0) + 1;
-        });
+  // Custom tooltip formatter
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0];
+      const percentage = ((data.value / pieData.reduce((sum, item) => sum + item.value, 0)) * 100).toFixed(1);
+      return (
+        <div className="custom-tooltip" style={{
+          backgroundColor: '#fff',
+          border: '1px solid #ccc',
+          borderRadius: '4px',
+          padding: '10px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}>
+          <p style={{ margin: 0, fontWeight: 'bold' }}>{data.name}</p>
+          <p style={{ margin: 0, color: '#666' }}>
+            Amount: ${data.value.toFixed(2)}
+          </p>
+          <p style={{ margin: 0, color: '#666' }}>
+            Percentage: {percentage}%
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
 
-        const words = Object.entries(counts)
-          .map(([text, value]) => ({ text, value }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 40);
+  // Custom label formatter
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
+    if (percent < 0.05) return null; // Don't show labels for slices < 5%
+    
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * Math.PI / 180);
+    const y = cy + radius * Math.sin(-midAngle * Math.PI / 180);
 
-        setWordCloudData(words);
-      } catch (err) {
-        console.error('Error fetching word cloud data:', err);
-        setError('Failed to load word cloud data');
-      }
-    };
-    fetchWordCloud();
-  }, []);
-
-  // Font size scale for word cloud
-  const fontScale = scaleLog({
-    domain: [
-      Math.min(...wordCloudData.map(w => w.value)),
-      Math.max(...wordCloudData.map(w => w.value))
-    ],
-    range: [20, 80],
-  });
-
-  const getRotationDegree = () => {
-    const rand = Math.random();
-    const degree = rand > 0.5 ? 60 : -60;
-    return rand * degree;
+    return (
+      <text 
+        x={x} 
+        y={y} 
+        fill="white" 
+        textAnchor={x > cx ? 'start' : 'end'} 
+        dominantBaseline="central"
+        fontSize="12"
+        fontWeight="bold"
+      >
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
   };
 
   // Loading and error states
   if (loading) {
-    return <div className="text-center py-5">Loading chart data...</div>;
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100%',
+        padding: '2rem' 
+      }}>
+        <div style={{
+          width: '40px',
+          height: '40px',
+          border: '4px solid #f3f3f3',
+          borderTop: '4px solid #007bff',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <p style={{ marginTop: '1rem', color: '#666' }}>Loading chart data...</p>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="text-center py-5 text-danger">{error}</div>;
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100%',
+        padding: '2rem',
+        color: '#dc3545'
+      }}>
+        <h6>Error Loading Data</h6>
+        <p>{error}</p>
+        {!isDemoMode && (
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '0.5rem 1rem',
+              border: '1px solid #007bff',
+              backgroundColor: 'transparent',
+              color: '#007bff',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
   }
 
-  if (!pieData.length && !wordCloudData.length) {
-    return <div className="text-center py-5">No data available</div>;
+  if (!pieData.length) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100%',
+        padding: '2rem' 
+      }}>
+        <h6 style={{ color: '#666', marginBottom: '0.5rem' }}>No Data Available</h6>
+        <p style={{ color: '#666', margin: 0, textAlign: 'center' }}>
+          {isDemoMode 
+            ? "Demo data doesn't contain category information." 
+            : "Upload some receipts to see category breakdown."
+          }
+        </p>
+      </div>
+    );
   }
+
+  const totalSpent = pieData.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
-      <Row className="h-100">
-        {/* Pie Chart */}
-        <Col md={6} className="h-100">
-          <ResponsiveContainer width="100%" height="110%">
-            <PieChart>
-              <Pie
-                data={pieData}
-                cx="53%"
-                cy="43%"
-                outerRadius="70%"
-                labelLine={false}
-                dataKey="value"
-                nameKey="name"
-                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                onClick={handlePieClick} 
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-            </PieChart>
-          </ResponsiveContainer>
-        </Col>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'row' }}>
+      {/* Pie Chart */}
+      <div style={{ flex: '0 0 65%', height: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={renderCustomLabel}
+              outerRadius="80%"
+              fill="#8884d8"
+              dataKey="value"
+              onClick={handlePieClick}
+            >
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip content={<CustomTooltip />} />
+            <Legend 
+              verticalAlign="bottom" 
+              height={36}
+              formatter={(value) => value}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
 
-        {/* Word Cloud */}
-        <Col md={6} className="d-flex align-items-center justify-content-center">
-          <div style={{ width: '100%', height: '400px' }}>
-            <svg width="100%" height="100%">
-              <Wordcloud
-                words={wordCloudData}
-                width={500}
-                height={400}
-                fontSize={(datum) => fontScale(datum.value)}
-                font="sans-serif"
-                padding={2}
-                spiral="rectangular"
-                rotate={getRotationDegree}
-                random={() => 0.5}
-              >
-                {(cloudWords) =>
-                  cloudWords.map((w, i) => (
-                    <Text
-                      key={w.text}
-                      fill={COLORS[i % COLORS.length]}
-                      textAnchor="middle"
-                      transform={`translate(${w.x}, ${w.y}) rotate(${w.rotate})`}
-                      fontSize={w.size}
-                      fontFamily={w.font}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => console.log(`Word clicked: ${w.text} (${w.value})`)}
-                    >
-                      {w.text}
-                    </Text>
-                  ))
-                }
-              </Wordcloud>
-            </svg>
+      {/* Category Stats */}
+      <div style={{ flex: '0 0 35%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '20px' }}>
+        <div className="category-stats">
+          <h6 style={{ marginBottom: '15px', fontSize: '1.1rem', fontWeight: 'bold' }}>
+            Category Breakdown
+            {isDemoMode && (
+              <span style={{ 
+                marginLeft: '8px', 
+                fontSize: '0.7rem', 
+                backgroundColor: '#6c757d', 
+                color: 'white', 
+                padding: '2px 6px', 
+                borderRadius: '10px' 
+              }}>
+                DEMO
+              </span>
+            )}
+          </h6>
+          <div className="stats-list" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+            {pieData.map((category, index) => {
+              const percentage = ((category.value / totalSpent) * 100).toFixed(1);
+              return (
+                <div key={category.name} className="stat-item" style={{
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '4px',
+                  borderLeft: `4px solid ${COLORS[index % COLORS.length]}`,
+                  padding: '8px',
+                  marginBottom: '8px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 'bold' }}>{category.name}</span>
+                    <span style={{ color: '#666' }}>{percentage}%</span>
+                  </div>
+                  <div style={{ color: '#28a745', fontWeight: 'bold' }}>${category.value.toFixed(2)}</div>
+                </div>
+              );
+            })}
           </div>
-        </Col>
-      </Row>
+          <div style={{ 
+            marginTop: '15px', 
+            padding: '8px', 
+            backgroundColor: '#007bff', 
+            color: 'white', 
+            borderRadius: '4px' 
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Total Spending:</span>
+              <span style={{ fontWeight: 'bold' }}>${totalSpent.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

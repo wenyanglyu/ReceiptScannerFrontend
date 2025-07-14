@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Card, Table, Form, Button, Row, Col, InputGroup, 
-  Accordion, Modal, Badge, Alert 
+  Modal, Badge, Alert 
 } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = "https://receiptscannerbackend.onrender.com/api";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
-const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
+const JsonDisplay = ({ 
+  receiptData, 
+  onUpdateSuccess,
+  isAuthenticated = false,
+  userToken = null
+}) => {
   const [editableData, setEditableData] = useState(null);
   const [receiptDate, setReceiptDate] = useState('');
   const [saving, setSaving] = useState(false);
@@ -21,15 +26,27 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
 
   useEffect(() => {
     if (receiptData) {
+      console.log('JsonDisplay received receiptData:', receiptData);
+      console.log('Items array:', receiptData.receiptInfo?.items);
+      
       setEditableData({
         ...receiptData,
         receiptInfo: {
-          ...receiptData.receiptInfo
+          ...receiptData.receiptInfo,
+          // Convert capitalized fields to lowercase for consistent usage
+          items: (receiptData.receiptInfo?.Items || receiptData.receiptInfo?.items || []).map(item => ({
+            productName: item.ProductName || item.productName,
+            casualName: item.CasualName || item.casualName,
+            price: item.Price || item.price,
+            quantity: item.Quantity || item.quantity,
+            unit: item.Unit || item.unit,
+            category: item.Category || item.category
+          }))
         }
       });
       
       const currentDate = new Date().toISOString().split('T')[0];
-      setReceiptDate(receiptData.receiptInfo.date || currentDate);
+      setReceiptDate(receiptData.receiptInfo?.Date || receiptData.receiptInfo?.date || currentDate);
     }
 
     // Handle window resize for responsive view switching
@@ -53,26 +70,25 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
   }
 
   const handleItemChange = (index, field, value) => {
-    const updatedItems = [...editableData.receiptInfo.items];
+    const updatedItems = [...(editableData.receiptInfo?.items || [])];
     
-      if (field === 'price' || field === 'quantity') {
-    // Allow empty string and partial numbers during typing
-    if (value === '' || value === '.' || /^\d*\.?\d*$/.test(value)) {
-      // Keep as string during editing
+    if (field === 'price' || field === 'quantity') {
+      // Allow empty string and partial numbers during typing
+      if (value === '' || value === '.' || /^\d*\.?\d*$/.test(value)) {
+        updatedItems[index] = {
+          ...updatedItems[index],
+          [field]: value
+        };
+      } else {
+        return;
+      }
+    } else {
       updatedItems[index] = {
         ...updatedItems[index],
         [field]: value
       };
-    } else {
-      // Invalid input, don't update
-      return;
     }
-  } else {
-    updatedItems[index] = {
-      ...updatedItems[index],
-      [field]: value
-    };
-  }
+    
     setEditableData({
       ...editableData,
       receiptInfo: {
@@ -84,7 +100,7 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
 
   const handleDeleteItem = (index) => {
     if (window.confirm('Are you sure you want to delete this item?')) {
-      const updatedItems = editableData.receiptInfo.items.filter((_, i) => i !== index);
+      const updatedItems = (editableData.receiptInfo?.items || []).filter((_, i) => i !== index);
       
       setEditableData({
         ...editableData,
@@ -110,7 +126,7 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
       ...editableData,
       receiptInfo: {
         ...editableData.receiptInfo,
-        items: [...editableData.receiptInfo.items, newItem]
+        items: [...(editableData.receiptInfo?.items || []), newItem]
       }
     });
   };
@@ -121,13 +137,28 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
   };
 
   const handleSaveChanges = async () => {
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      setError('');
+      setSuccess('Please sign in to save changes permanently');
+      
+      // Navigate to next page after short delay
+      setTimeout(() => {
+        if (onUpdateSuccess && typeof onUpdateSuccess === 'function') {
+          onUpdateSuccess();
+        }
+      }, 1500);
+      return;
+    }
+
+    // Real save for authenticated users
     try {
       setSaving(true);
       setError('');
       setSuccess('');
       
-      const calculatedTotal = editableData.receiptInfo.items.reduce(
-        (sum, item) => sum + (item.price || 0), 
+      const calculatedTotal = (editableData.receiptInfo?.items || []).reduce(
+        (sum, item) => sum + (parseFloat(item.price) || 0), 
         0
       );
       
@@ -139,54 +170,60 @@ const JsonDisplay = ({ receiptData, onUpdateSuccess }) => {
         return num;
       };
       
-    const dataToSave = {
-      imageName: editableData.imageName,
-      receiptInfo: {
-        items: editableData.receiptInfo.items.map(item => ({
-          productName: item.productName,
-          casualName: item.casualName,
-          price: cleanNumber(parseFloat(item.price) || 0), // ✅ Parse only when saving
-          quantity: cleanNumber(parseFloat(item.quantity) || 0), // ✅ Parse only when saving
-          unit: item.unit,
-          category: item.category
-        })),
+      const dataToSave = {
+        imageName: editableData.imageName,
+        receiptInfo: {
+          items: (editableData.receiptInfo?.items || []).map(item => ({
+            productName: item.productName,
+            casualName: item.casualName,
+            price: cleanNumber(parseFloat(item.price) || 0),
+            quantity: cleanNumber(parseFloat(item.quantity) || 0),
+            unit: item.unit,
+            category: item.category
+          })),
           date: receiptDate,
           calculatedTotal: cleanNumber(parseFloat(calculatedTotal)),
           providedTotal: cleanNumber(parseFloat(calculatedTotal))
         }
       };
+
+      const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      };
       
-      const response = await axios.post(`${API_BASE_URL}/Receipt/save-as-file`, dataToSave, {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await axios.post(`${API_BASE_URL}/Receipt/save-as-file`, dataToSave, { headers });
+      setSuccess('Receipt saved successfully to your account!');
       
-      setSuccess('Receipt updated successfully!');
-      
-      // Call the callback with a slight delay to ensure backend processing is complete
+      // Call the callback with a slight delay
       if (onUpdateSuccess && typeof onUpdateSuccess === 'function') {
         setTimeout(() => {
           onUpdateSuccess(response.data);
-        }, 500); // 500ms delay to ensure backend has processed the update
+        }, 500);
       }
     } catch (err) {
       console.error('Error updating receipt:', err);
-      setError(`Failed to update receipt: ${err.message}`);
+      
+      if (err.response?.status === 401) {
+        setError('Authentication failed. Please sign in again.');
+      } else if (err.response?.status === 429) {
+        setError('Too many requests. Please wait a moment and try again.');
+      } else {
+        setError(`Failed to update receipt: ${err.response?.data?.message || err.message}`);
+      }
     } finally {
       setSaving(false);
     }
   };
 
-const currentTotal = editableData.receiptInfo.items.reduce(
-  (sum, item) => {
-    // ✅ FIXED: Parse only when calculating, handle strings
-    const price = typeof item.price === 'string' ? parseFloat(item.price) || 0 : item.price || 0;
-    return sum + price;
-  }, 
-  0
-).toFixed(2);
+  const currentTotal = (editableData.receiptInfo?.items || []).reduce(
+    (sum, item) => {
+      const price = typeof item.price === 'string' ? parseFloat(item.price) || 0 : item.price || 0;
+      return sum + price;
+    }, 
+    0
+  ).toFixed(2);
 
   const formatCurrency = (amount) => {
     return `$${parseFloat(amount || 0).toFixed(2)}`;
@@ -242,7 +279,9 @@ const currentTotal = editableData.receiptInfo.items.reduce(
       <Card className="receipt-edit-card">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <h4 className="mb-0">Receipt Details</h4>
-          <Badge bg="info">{editableData.receiptInfo.items.length} items</Badge>
+          <div className="d-flex gap-2 align-items-center">
+            <Badge bg="info">{(editableData.receiptInfo?.items || []).length} items</Badge>
+          </div>
         </Card.Header>
         
         <Card.Body className="p-3">
@@ -278,7 +317,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
           {/* Items Section */}
           <div className="items-section">
             <div className="d-flex justify-content-between align-items-center mb-3">
-              <h5 className="mb-0">Items ({editableData.receiptInfo.items.length})</h5>
+              <h5 className="mb-0">Items ({(editableData.receiptInfo?.items || []).length})</h5>
               <Button 
                 variant="success" 
                 size="sm"
@@ -291,14 +330,16 @@ const currentTotal = editableData.receiptInfo.items.reduce(
             {/* Mobile Card View */}
             {viewMode === 'cards' && (
               <div className="items-cards-container">
-                {editableData.receiptInfo.items.length === 0 ? (
+                {(editableData.receiptInfo?.items || []).length === 0 ? (
                   <Card className="text-center py-4">
                     <Card.Body>
-                      <p className="mb-0 text-muted">No items found. Add some items to get started.</p>
+                      <p className="mb-0 text-muted">
+                        No items found. Add some items to get started.
+                      </p>
                     </Card.Body>
                   </Card>
                 ) : (
-                  editableData.receiptInfo.items.map((item, index) => (
+                  (editableData.receiptInfo?.items || []).map((item, index) => (
                     <ItemCard key={index} item={item} index={index} />
                   ))
                 )}
@@ -320,7 +361,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                     </tr>
                   </thead>
                   <tbody>
-                    {editableData.receiptInfo.items.map((item, index) => (
+                    {(editableData.receiptInfo?.items || []).map((item, index) => (
                       <tr key={index}>
                         <td>
                           <Form.Control
@@ -396,7 +437,14 @@ const currentTotal = editableData.receiptInfo.items.reduce(
               disabled={saving}
               className="px-4"
             >
-              {saving ? 'Saving...' : 'Save Changes'}
+              {saving ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
             </Button>
           </div>
         </Card.Body>
@@ -413,7 +461,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
           <Modal.Title>Edit Item</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {editingItem !== null && editableData.receiptInfo.items[editingItem] && (
+          {editingItem !== null && (editableData.receiptInfo?.items || [])[editingItem] && (
             <Form>
               <Row className="g-3">
                 <Col xs={12}>
@@ -421,7 +469,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                     <Form.Label className="fw-bold">Product Name</Form.Label>
                     <Form.Control
                       type="text"
-                      value={editableData.receiptInfo.items[editingItem].productName}
+                      value={editableData.receiptInfo.items?.[editingItem]?.productName || ''}
                       onChange={(e) => handleItemChange(editingItem, 'productName', e.target.value)}
                       className="form-control-lg"
                     />
@@ -432,7 +480,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                     <Form.Label className="fw-bold">Simple Name</Form.Label>
                     <Form.Control
                       type="text"
-                      value={editableData.receiptInfo.items[editingItem].casualName}
+                      value={editableData.receiptInfo.items?.[editingItem]?.casualName || ''}
                       onChange={(e) => handleItemChange(editingItem, 'casualName', e.target.value)}
                       placeholder="Simple name"
                       className="form-control-lg"
@@ -444,7 +492,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                     <Form.Label className="fw-bold">Category</Form.Label>
                     <Form.Control
                       type="text"
-                      value={editableData.receiptInfo.items[editingItem].category}
+                      value={editableData.receiptInfo.items?.[editingItem]?.category || ''}
                       onChange={(e) => handleItemChange(editingItem, 'category', e.target.value)}
                       placeholder="Enter category"
                       className="form-control-lg"
@@ -457,7 +505,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                     <Form.Control
                       type="number"
                       step="0.01"
-                      value={editableData.receiptInfo.items[editingItem].quantity}
+                      value={editableData.receiptInfo.items?.[editingItem]?.quantity || ''}
                       onChange={(e) => handleItemChange(editingItem, 'quantity', e.target.value)}
                       className="form-control-lg"
                     />
@@ -468,7 +516,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                     <Form.Label className="fw-bold">Unit</Form.Label>
                     <Form.Control
                       type="text"
-                      value={editableData.receiptInfo.items[editingItem].unit}
+                      value={editableData.receiptInfo.items?.[editingItem]?.unit || ''}
                       onChange={(e) => handleItemChange(editingItem, 'unit', e.target.value)}
                       className="form-control-lg"
                     />
@@ -482,7 +530,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
                       <Form.Control
                         type="number"
                         step="0.01"
-                        value={editableData.receiptInfo.items[editingItem].price}
+                        value={editableData.receiptInfo.items?.[editingItem]?.price || ''}
                         onChange={(e) => handleItemChange(editingItem, 'price', e.target.value)}
                       />
                     </InputGroup>
@@ -542,7 +590,7 @@ const currentTotal = editableData.receiptInfo.items.reduce(
         @media (max-width: 767.98px) {
           .form-control,
           .form-select {
-            font-size: 16px; /* Prevent zoom on iOS */
+            font-size: 16px;
             min-height: 44px;
           }
           
