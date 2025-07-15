@@ -38,7 +38,7 @@ const ReceiptHistory = ({
 
     // For authenticated receipts, use API proxy
     if (isAuthenticated && hashId) {
-      return '${REACT_APP_API_BASE_URL}/receipt/image/${hashId}';
+      return `${process.env.REACT_APP_API_BASE_URL}/receipt/image/${hashId}`;
     }
 
     return imageUrl || '/placeholder-receipt.png';
