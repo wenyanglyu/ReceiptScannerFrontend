@@ -27,28 +27,28 @@ const ReceiptHistory = ({
     return window.innerWidth >= 768 ? 'table' : 'cards';
   });
 
- const getWorkingImageUrl = (receipt) => {
-    const imageUrl = receipt.receiptInfo?.imageUrl || receipt.receiptInfo?.ImageUrl;
-    const hashId = receipt.imageName;
+  const getWorkingImageUrl = (receipt) => {
+  const imageUrl = receipt.receiptInfo?.imageUrl || receipt.receiptInfo?.ImageUrl;
+  const hashId = receipt.imageName;
 
-    // For sample/local images
-    if (imageUrl && imageUrl.startsWith('/data/')) {
-      return imageUrl;
-    }
+  // For sample/local images
+  if (imageUrl && imageUrl.startsWith('/data/')) {
+    return imageUrl;
+  }
 
-    // For authenticated receipts, use API proxy
-    if (isAuthenticated && hashId) {
-      return `${process.env.REACT_APP_API_BASE_URL}/receipt/image/${hashId}`;
-    }
+  // For real receipts, always use API proxy (no auth check needed since endpoint is now public)
+  if (hashId) {
+    return `${process.env.REACT_APP_API_BASE_URL}/receipt/image/${hashId}`;
+  }
 
-    return imageUrl || '/placeholder-receipt.png';
+  return imageUrl || '/placeholder-receipt.png';
+};
+
+useEffect(() => {
+  const handleResize = () => {
+    const newViewMode = window.innerWidth >= 768 ? 'table' : 'cards';
+    setViewMode(newViewMode);
   };
-
-  useEffect(() => {
-    const handleResize = () => {
-      const newViewMode = window.innerWidth >= 768 ? 'table' : 'cards';
-      setViewMode(newViewMode);
-    };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
