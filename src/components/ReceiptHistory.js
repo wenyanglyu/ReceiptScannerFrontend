@@ -27,20 +27,21 @@ const ReceiptHistory = ({
     return window.innerWidth >= 768 ? 'table' : 'cards';
   });
 
-  const getWorkingImageUrl = (receipt) => {
+ const getWorkingImageUrl = (receipt) => {
     const imageUrl = receipt.receiptInfo?.imageUrl || receipt.receiptInfo?.ImageUrl;
-    
+    const hashId = receipt.imageName;
+
     // For sample/local images
     if (imageUrl && imageUrl.startsWith('/data/')) {
       return imageUrl;
     }
-    
-    // Use direct URL if available (Google Drive or any other)
-    if (imageUrl) {
-      return imageUrl;
+
+    // For authenticated receipts, use API proxy
+    if (isAuthenticated && hashId) {
+      return "${API_BASE_URL}/receipt/image/${hashId}";
     }
-    
-    return '/placeholder-receipt.png';
+
+    return imageUrl || '/placeholder-receipt.png';
   };
 
   useEffect(() => {
