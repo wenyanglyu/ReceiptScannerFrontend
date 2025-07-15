@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
 // API base URL
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 // 5 premium bubble design variations
 const BUBBLE_DESIGNS = [
@@ -173,7 +173,7 @@ const PhysicsBubblesChart = ({
             headers['Authorization'] = `Bearer ${userToken}`;
           }
           
-          const response = await fetch(`${API_BASE_URL}/Receipt/stats/items`, { headers });
+          const response = await fetch(`${REACT_APP_API_BASE_URL}/Receipt/stats/items`, { headers });
           
           if (!response.ok) {
             throw new Error(`API Error: ${response.status} ${response.statusText}`);

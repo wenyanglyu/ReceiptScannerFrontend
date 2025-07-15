@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 
 // API base URL - centralize it here
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const SpendingTrends = ({
   receiptsData = [],

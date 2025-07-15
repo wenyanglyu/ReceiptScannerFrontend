@@ -5,7 +5,7 @@ import {
 } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const JsonDisplay = ({ 
   receiptData, 
@@ -193,7 +193,7 @@ const JsonDisplay = ({
         'Authorization': `Bearer ${userToken}`
       };
       
-      const response = await axios.post(`${API_BASE_URL}/Receipt/save-as-file`, dataToSave, { headers });
+      const response = await axios.post(`${REACT_APP_API_BASE_URL}/Receipt/save-as-file`, dataToSave, { headers });
       setSuccess('Receipt saved successfully to your account!');
       
       // Call the callback with a slight delay

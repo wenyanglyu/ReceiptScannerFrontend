@@ -23,7 +23,7 @@ function App() {
   const [error, setError] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
 
-  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+  const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -90,7 +90,7 @@ function App() {
     try {
       setAppState(prev => ({ ...prev, isLoading: true }));
       
-      const response = await axios.get(`${API_BASE_URL}/Receipt`, {
+      const response = await axios.get(`${REACT_APP_API_BASE_URL}/Receipt`, {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',

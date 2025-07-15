@@ -5,7 +5,7 @@ import {
 } from 'react-bootstrap';
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const ReceiptHistory = ({ 
   receiptsData = [],
@@ -38,7 +38,7 @@ const ReceiptHistory = ({
 
     // For authenticated receipts, use API proxy
     if (isAuthenticated && hashId) {
-      return "${API_BASE_URL}/receipt/image/${hashId}";
+      return '${REACT_APP_API_BASE_URL}/receipt/image/${hashId}';
     }
 
     return imageUrl || '/placeholder-receipt.png';
@@ -157,7 +157,7 @@ const ReceiptHistory = ({
       try {
         setLoading(true);
 
-        const response = await axios.post(`${API_BASE_URL}/Receipt/delete-multiple`, {
+        const response = await axios.post(`${REACT_APP_API_BASE_URL}/Receipt/delete-multiple`, {
           imageNames: selectedReceipts
         }, {
           headers: {
