@@ -25,6 +25,26 @@ function App() {
 
   const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
+  // Load saved authentication state on app startup
+  useEffect(() => {
+    const savedAuthState = localStorage.getItem('receiptScannerAuth');
+    if (savedAuthState) {
+      try {
+        const authData = JSON.parse(savedAuthState);
+        console.log('Restored login state:', authData.user?.name);
+        setAppState(prev => ({
+          ...prev,
+          isAuthenticated: true,
+          user: authData.user
+        }));
+      } catch (error) {
+        console.error('Failed to restore login state:', error);
+        // If corrupted, clear it
+        localStorage.removeItem('receiptScannerAuth');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
@@ -163,6 +183,13 @@ function App() {
       
       console.log('Real user logged in:', user);
       
+      // Save to localStorage for persistence
+      const authState = {
+        user: user,
+        timestamp: Date.now() // Optional: track when they logged in
+      };
+      localStorage.setItem('receiptScannerAuth', JSON.stringify(authState));
+      
       setAppState(prev => ({
         ...prev,
         isAuthenticated: true,
@@ -177,6 +204,9 @@ function App() {
 
   // Handle logout
   const handleLogout = () => {
+    // Clear localStorage
+    localStorage.removeItem('receiptScannerAuth');
+    
     setAppState(prev => ({
       ...prev,
       isAuthenticated: false,
@@ -185,6 +215,8 @@ function App() {
     }));
     setReceiptData(null);
     setActiveTab('upload');
+    
+    console.log('User logged out');
     
     // Reload sample data for guest mode
     loadSampleData();
