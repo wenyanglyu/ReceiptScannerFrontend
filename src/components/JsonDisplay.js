@@ -23,13 +23,17 @@ const JsonDisplay = ({
   });
   const [editingItem, setEditingItem] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  
+  // New state for tracking edited items
+  const [editedItems, setEditedItems] = useState(new Set());
+  const [originalData, setOriginalData] = useState(null);
 
   useEffect(() => {
     if (receiptData) {
       console.log('JsonDisplay received receiptData:', receiptData);
       console.log('Items array:', receiptData.receiptInfo?.items);
       
-      setEditableData({
+      const processedData = {
         ...receiptData,
         receiptInfo: {
           ...receiptData.receiptInfo,
@@ -43,10 +47,17 @@ const JsonDisplay = ({
             category: item.Category || item.category
           }))
         }
-      });
+      };
+      
+      setEditableData(processedData);
+      // Store original data for comparison
+      setOriginalData(JSON.parse(JSON.stringify(processedData)));
       
       const currentDate = new Date().toISOString().split('T')[0];
       setReceiptDate(receiptData.receiptInfo?.Date || receiptData.receiptInfo?.date || currentDate);
+      
+      // Reset edited items tracking
+      setEditedItems(new Set());
     }
 
     // Handle window resize for responsive view switching
@@ -69,12 +80,29 @@ const JsonDisplay = ({
     );
   }
 
+  // Check if an item has been edited compared to original
+  const isItemEdited = (index) => {
+    if (!originalData || !originalData.receiptInfo?.items || !editableData.receiptInfo?.items) return false;
+    
+    const originalItem = originalData.receiptInfo.items[index];
+    const currentItem = editableData.receiptInfo.items[index];
+    
+    if (!originalItem || !currentItem) return false;
+    
+    return JSON.stringify(originalItem) !== JSON.stringify(currentItem);
+  };
+
+  // Mark item as edited
+  const markItemAsEdited = (index) => {
+    setEditedItems(prev => new Set([...prev, index]));
+  };
+
   const handleItemChange = (index, field, value) => {
     const updatedItems = [...(editableData.receiptInfo?.items || [])];
     
     if (field === 'price' || field === 'quantity') {
-      // Allow empty string and partial numbers during typing
-      if (value === '' || value === '.' || /^\d*\.?\d*$/.test(value)) {
+      // Allow negative values, empty string, decimal points, and numbers
+      if (value === '' || value === '.' || value === '-' || /^-?\d*\.?\d*$/.test(value)) {
         updatedItems[index] = {
           ...updatedItems[index],
           [field]: value
@@ -96,6 +124,68 @@ const JsonDisplay = ({
         items: updatedItems
       }
     });
+
+    // Mark item as edited
+    markItemAsEdited(index);
+  };
+
+  // Move item up
+  const moveItemUp = (index) => {
+    if (index <= 0) return;
+    
+    const updatedItems = [...(editableData.receiptInfo?.items || [])];
+    [updatedItems[index - 1], updatedItems[index]] = [updatedItems[index], updatedItems[index - 1]];
+    
+    setEditableData({
+      ...editableData,
+      receiptInfo: {
+        ...editableData.receiptInfo,
+        items: updatedItems
+      }
+    });
+
+    // Update edited items tracking after move
+    const newEditedItems = new Set();
+    editedItems.forEach(editedIndex => {
+      if (editedIndex === index) {
+        newEditedItems.add(index - 1);
+      } else if (editedIndex === index - 1) {
+        newEditedItems.add(index);
+      } else {
+        newEditedItems.add(editedIndex);
+      }
+    });
+    setEditedItems(newEditedItems);
+  };
+
+  // Move item down
+  const moveItemDown = (index) => {
+    const items = editableData.receiptInfo?.items || [];
+    if (index >= items.length - 1) return;
+    
+    const updatedItems = [...items];
+    [updatedItems[index], updatedItems[index + 1]] = [updatedItems[index + 1], updatedItems[index]];
+    
+    setEditableData({
+      ...editableData,
+      receiptInfo: {
+        ...editableData.receiptInfo,
+        items: updatedItems
+      }
+    });
+
+    // Update edited items tracking after move
+    const newEditedItems = new Set();
+    editedItems.forEach(editedIndex => {
+      if (editedIndex === index) {
+        newEditedItems.add(index + 1);
+      } else if (editedIndex === index + 1) {
+        newEditedItems.add(index);
+      } else {
+        newEditedItems.add(editedIndex);
+      }
+    });
+    setEditedItems(newEditedItems);
   };
 
   const handleDeleteItem = (index) => {
@@ -109,6 +199,18 @@ const JsonDisplay = ({
           items: updatedItems
         }
       });
+
+      // Update edited items tracking after deletion
+      const newEditedItems = new Set();
+      editedItems.forEach(editedIndex => {
+        if (editedIndex < index) {
+          newEditedItems.add(editedIndex);
+        } else if (editedIndex > index) {
+          newEditedItems.add(editedIndex - 1);
+        }
+        // Items at the deleted index are removed from tracking
+      });
+      setEditedItems(newEditedItems);
     }
   };
 
@@ -122,13 +224,19 @@ const JsonDisplay = ({
       category: "Other"
     };
     
+    const currentItems = editableData.receiptInfo?.items || [];
+    const newIndex = currentItems.length;
+    
     setEditableData({
       ...editableData,
       receiptInfo: {
         ...editableData.receiptInfo,
-        items: [...(editableData.receiptInfo?.items || []), newItem]
+        items: [...currentItems, newItem]
       }
     });
+
+    // Mark new item as edited
+    markItemAsEdited(newIndex);
   };
 
   const handleEditItem = (index) => {
@@ -195,6 +303,10 @@ const JsonDisplay = ({
       const response = await axios.post(`${REACT_APP_API_BASE_URL}/Receipt/save-as-file`, dataToSave, { headers });
       setSuccess('Receipt saved successfully to your account!');
       
+      // Reset edited items tracking after successful save
+      setEditedItems(new Set());
+      setOriginalData(JSON.parse(JSON.stringify(editableData)));
+      
       // Call the callback with a slight delay
       if (onUpdateSuccess && typeof onUpdateSuccess === 'function') {
         setTimeout(() => {
@@ -225,53 +337,90 @@ const JsonDisplay = ({
   ).toFixed(2);
 
   const formatCurrency = (amount) => {
-    return `$${parseFloat(amount || 0).toFixed(2)}`;
+    const num = parseFloat(amount || 0);
+    const sign = num < 0 ? '-' : '';
+    return `${sign}$${Math.abs(num).toFixed(2)}`;
   };
 
   // Mobile Item Card Component
-  const ItemCard = ({ item, index }) => (
-    <Card className="item-card mb-3 shadow-sm">
-      <Card.Body className="p-3">
-        <Row className="align-items-center">
-          <Col xs={8}>
-            <div className="item-details">
-              <h6 className="mb-1 item-name">{item.productName}</h6>
-              <small className="text-muted d-block mb-2">{item.casualName}</small>
-              <div className="item-meta">
-                <Badge bg="secondary" className="me-2">{item.category}</Badge>
-                <span className="text-muted me-2">
-                  {item.quantity} {item.unit}
-                </span>
-                <span className="fw-bold text-success">
-                  {formatCurrency(item.price)}
-                </span>
+  const ItemCard = ({ item, index }) => {
+    const itemEdited = isItemEdited(index) || editedItems.has(index);
+    
+    return (
+      <Card className={`item-card mb-3 shadow-sm ${itemEdited ? 'border-warning' : ''}`}>
+        {itemEdited && (
+          <div className="edited-badge">
+            <Badge bg="warning" text="dark" className="position-absolute" style={{ top: '-8px', right: '8px', zIndex: 1 }}>
+              EDITED
+            </Badge>
+          </div>
+        )}
+        <Card.Body className="p-3">
+          <Row className="align-items-center">
+            <Col xs={8}>
+              <div className="item-details">
+                <h6 className="mb-1 item-name">{item.productName}</h6>
+                <small className="text-muted d-block mb-2">{item.casualName}</small>
+                <div className="item-meta">
+                  <Badge bg="secondary" className="me-2">{item.category}</Badge>
+                  <span className="text-muted me-2">
+                    {item.quantity} {item.unit}
+                  </span>
+                  <span className={`fw-bold ${parseFloat(item.price) < 0 ? 'text-danger' : 'text-success'}`}>
+                    {formatCurrency(item.price)}
+                  </span>
+                </div>
               </div>
-            </div>
-          </Col>
-          <Col xs={4} className="text-end">
-            <div className="item-actions">
-              <Button 
-                variant="outline-primary" 
-                size="sm"
-                className="me-1 mb-1"
-                onClick={() => handleEditItem(index)}
-              >
-                Edit
-              </Button>
-              <Button 
-                variant="outline-danger" 
-                size="sm"
-                className="mb-1"
-                onClick={() => handleDeleteItem(index)}
-              >
-                Delete
-              </Button>
-            </div>
-          </Col>
-        </Row>
-      </Card.Body>
-    </Card>
-  );
+            </Col>
+            <Col xs={4} className="text-end">
+              <div className="item-actions">
+                {/* Move buttons */}
+                <div className="move-buttons mb-2">
+                  <Button 
+                    variant="outline-secondary" 
+                    size="sm"
+                    className="me-1 p-1"
+                    onClick={() => moveItemUp(index)}
+                    disabled={index === 0}
+                    title="Move Up"
+                  >
+                    ↑
+                  </Button>
+                  <Button 
+                    variant="outline-secondary" 
+                    size="sm"
+                    className="p-1"
+                    onClick={() => moveItemDown(index)}
+                    disabled={index === (editableData.receiptInfo?.items || []).length - 1}
+                    title="Move Down"
+                  >
+                    ↓
+                  </Button>
+                </div>
+                
+                <Button 
+                  variant="outline-primary" 
+                  size="sm"
+                  className="me-1 mb-1"
+                  onClick={() => handleEditItem(index)}
+                >
+                  Edit
+                </Button>
+                <Button 
+                  variant="outline-danger" 
+                  size="sm"
+                  className="mb-1"
+                  onClick={() => handleDeleteItem(index)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </Col>
+          </Row>
+        </Card.Body>
+      </Card>
+    );
+  };
 
   return (
     <>
@@ -280,6 +429,9 @@ const JsonDisplay = ({
           <h4 className="mb-0">Receipt Details</h4>
           <div className="d-flex gap-2 align-items-center">
             <Badge bg="info">{(editableData.receiptInfo?.items || []).length} items</Badge>
+            {editedItems.size > 0 && (
+              <Badge bg="warning" text="dark">{editedItems.size} edited</Badge>
+            )}
           </div>
         </Card.Header>
         
@@ -307,7 +459,7 @@ const JsonDisplay = ({
                   type="text"
                   value={formatCurrency(currentTotal)}
                   readOnly
-                  className="form-control-lg fw-bold text-success"
+                  className={`form-control-lg fw-bold ${parseFloat(currentTotal) < 0 ? 'text-danger' : 'text-success'}`}
                 />
               </Form.Group>
             </Col>
@@ -351,6 +503,7 @@ const JsonDisplay = ({
                 <Table striped bordered hover>
                   <thead>
                     <tr>
+                      <th style={{ width: '80px' }}>Move</th>
                       <th>Product Name</th>
                       <th>Category</th>
                       <th>Quantity</th>
@@ -360,67 +513,101 @@ const JsonDisplay = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {(editableData.receiptInfo?.items || []).map((item, index) => (
-                      <tr key={index}>
-                        <td>
-                          <Form.Control
-                            type="text"
-                            value={item.productName}
-                            onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
-                          />
-                          <Form.Control
-                            type="text"
-                            value={item.casualName}
-                            onChange={(e) => handleItemChange(index, 'casualName', e.target.value)}
-                            placeholder="Simple name"
-                            className="mt-1"
-                          />
-                        </td>
-                        <td>
-                          <Form.Control
-                            type="text"
-                            value={item.category}
-                            onChange={(e) => handleItemChange(index, 'category', e.target.value)}
-                            placeholder="Enter category"
-                          />
-                        </td>
-                        <td>
-                          <Form.Control
-                            type="number"
-                            step="0.01"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                          />
-                        </td>
-                        <td>
-                          <Form.Control
-                            type="text"
-                            value={item.unit}
-                            onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
-                          />
-                        </td>
-                        <td>
-                          <InputGroup>
-                            <InputGroup.Text>$</InputGroup.Text>
+                    {(editableData.receiptInfo?.items || []).map((item, index) => {
+                      const itemEdited = isItemEdited(index) || editedItems.has(index);
+                      
+                      return (
+                        <tr key={index} className={itemEdited ? 'table-warning' : ''}>
+                          <td className="text-center">
+                            {itemEdited && (
+                              <Badge bg="warning" text="dark" className="d-block mb-1" style={{ fontSize: '0.7em' }}>
+                                EDITED
+                              </Badge>
+                            )}
+                            <div className="btn-group-vertical" role="group">
+                              <Button 
+                                variant="outline-secondary" 
+                                size="sm"
+                                onClick={() => moveItemUp(index)}
+                                disabled={index === 0}
+                                title="Move Up"
+                                className="py-0 px-1"
+                              >
+                                ↑
+                              </Button>
+                              <Button 
+                                variant="outline-secondary" 
+                                size="sm"
+                                onClick={() => moveItemDown(index)}
+                                disabled={index === (editableData.receiptInfo?.items || []).length - 1}
+                                title="Move Down"
+                                className="py-0 px-1"
+                              >
+                                ↓
+                              </Button>
+                            </div>
+                          </td>
+                          <td>
                             <Form.Control
-                              type="number"
-                              step="0.01"
-                              value={item.price}
-                              onChange={(e) => handleItemChange(index, 'price', e.target.value)}
+                              type="text"
+                              value={item.productName}
+                              onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
                             />
-                          </InputGroup>
-                        </td>
-                        <td>
-                          <Button 
-                            variant="danger" 
-                            size="sm"
-                            onClick={() => handleDeleteItem(index)}
-                          >
-                            Delete
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                            <Form.Control
+                              type="text"
+                              value={item.casualName}
+                              onChange={(e) => handleItemChange(index, 'casualName', e.target.value)}
+                              placeholder="Simple name"
+                              className="mt-1"
+                            />
+                          </td>
+                          <td>
+                            <Form.Control
+                              type="text"
+                              value={item.category}
+                              onChange={(e) => handleItemChange(index, 'category', e.target.value)}
+                              placeholder="Enter category"
+                            />
+                          </td>
+                          <td>
+                            <Form.Control
+                              type="text"
+                              value={item.quantity}
+                              onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                              placeholder="Can be negative"
+                            />
+                          </td>
+                          <td>
+                            <Form.Control
+                              type="text"
+                              value={item.unit}
+                              onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
+                            />
+                          </td>
+                          <td>
+                            <InputGroup>
+                              <InputGroup.Text>$</InputGroup.Text>
+                              <Form.Control
+                                type="text"
+                                value={item.price}
+                                onChange={(e) => handleItemChange(index, 'price', e.target.value)}
+                                placeholder="Can be negative"
+                                className={parseFloat(item.price) < 0 ? 'text-danger' : ''}
+                              />
+                            </InputGroup>
+                          </td>
+                          <td>
+                            <Button 
+                              variant="danger" 
+                              size="sm"
+                              onClick={() => handleDeleteItem(index)}
+                            >
+                              Delete
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </Table>
               </div>
@@ -502,11 +689,11 @@ const JsonDisplay = ({
                   <Form.Group>
                     <Form.Label className="fw-bold">Quantity</Form.Label>
                     <Form.Control
-                      type="number"
-                      step="0.01"
+                      type="text"
                       value={editableData.receiptInfo.items?.[editingItem]?.quantity || ''}
                       onChange={(e) => handleItemChange(editingItem, 'quantity', e.target.value)}
                       className="form-control-lg"
+                      placeholder="Can be negative"
                     />
                   </Form.Group>
                 </Col>
@@ -527,10 +714,11 @@ const JsonDisplay = ({
                     <InputGroup size="lg">
                       <InputGroup.Text>$</InputGroup.Text>
                       <Form.Control
-                        type="number"
-                        step="0.01"
+                        type="text"
                         value={editableData.receiptInfo.items?.[editingItem]?.price || ''}
                         onChange={(e) => handleItemChange(editingItem, 'price', e.target.value)}
+                        placeholder="Can be negative (e.g., -5.99)"
+                        className={parseFloat(editableData.receiptInfo.items?.[editingItem]?.price) < 0 ? 'text-danger' : ''}
                       />
                     </InputGroup>
                   </Form.Group>
@@ -554,6 +742,7 @@ const JsonDisplay = ({
           </Button>
         </Modal.Footer>
       </Modal>
+      
       {/* Receipt Image Section */}
       <div className="receipt-image-section mt-4">
         <div className="d-flex justify-content-between align-items-center mb-3">
