@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { Container, Navbar, Nav, Badge, Button, Alert, Modal, Dropdown } from 'react-bootstrap';
+import { Container, Navbar, Nav, Badge, Button, Alert, Modal, Card, Row, Col } from 'react-bootstrap';
 import ImageUploader from './components/ImageUploader';
 import JsonDisplay from './components/JsonDisplay';
 import Dashboard from './components/Dashboard';
 import ReceiptHistory from './components/ReceiptHistory';
 import axios from 'axios';
 
-axios.defaults.withCredentials = false;
+axios.defaults.withCredentials = true;
 
 function App() {
-  // Simple state management - logged in vs not logged in
+  // Simplified state management - authentication required for all functionality
   const [appState, setAppState] = useState({
     isAuthenticated: false,
     user: null,
-    receiptsData: [], // User's data (empty if not logged in)
+    receiptsData: [], // Only populated when authenticated
     isLoading: false
   });
 
@@ -22,28 +22,114 @@ function App() {
   const [activeTab, setActiveTab] = useState('upload');
   const [error, setError] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileImageError, setProfileImageError] = useState(false);
 
   const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+  
+  // In App.js, add this function:
+const handleDeleteSuccess = async (deletedImageNames) => {
+  console.log('handleDeleteSuccess called with:', deletedImageNames);
+  
+  try {
+    // Force refresh from server
+    console.log('Fetching fresh receipt data...');
+    const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/Receipt`);
+    
+    console.log('Fresh receipt data:', response.data);
+    
+    setAppState(prev => ({
+      ...prev,
+      receiptsData: response.data || []
+    }));
+    
+    console.log(`Successfully refreshed data after deleting ${deletedImageNames.length} receipts`);
+  } catch (error) {
+    console.error('Error refreshing receipts after delete:', error);
+    
+    // Fallback: filter out deleted receipts from current state
+    console.log('Using fallback: filtering out deleted receipts locally');
+    setAppState(prev => ({
+      ...prev,
+      receiptsData: prev.receiptsData.filter(
+        receipt => !deletedImageNames.includes(receipt.imageName)
+      )
+    }));
+  }
+};
 
-  // Load saved authentication state on app startup
+  // 🔧 UPDATED: Check session validity on app startup
   useEffect(() => {
-    const savedAuthState = localStorage.getItem('receiptScannerAuth');
-    if (savedAuthState) {
-      try {
-        const authData = JSON.parse(savedAuthState);
-        console.log('Restored login state:', authData.user?.name);
-        setAppState(prev => ({
-          ...prev,
-          isAuthenticated: true,
-          user: authData.user
-        }));
-      } catch (error) {
-        console.error('Failed to restore login state:', error);
-        // If corrupted, clear it
-        localStorage.removeItem('receiptScannerAuth');
+    const checkAuthenticationState = async () => {
+      // First, try to get saved profile data from localStorage (UI only)
+      const savedAuthState = localStorage.getItem('receiptScannerAuth');
+      let savedUser = null;
+      
+      if (savedAuthState) {
+        try {
+          const authData = JSON.parse(savedAuthState);
+          savedUser = authData.user;
+        } catch (error) {
+          console.error('Failed to parse saved auth state:', error);
+          localStorage.removeItem('receiptScannerAuth');
+        }
       }
-    }
-  }, []);
+
+      // Check if session cookie is valid with backend
+      try {
+        setAppState(prev => ({ ...prev, isLoading: true }));
+        
+        const response = await axios.get(`${REACT_APP_API_BASE_URL}/auth/validate-session`);
+        
+        if (response.data.isValid) {
+          console.log('Valid session found, user:', response.data.user.name);
+          
+          // Use backend user data as primary source, fallback to saved data
+          const user = {
+            sub: response.data.user.id,
+            name: response.data.user.name || savedUser?.name,
+            email: response.data.user.email || savedUser?.email,
+            picture: savedUser?.picture // Profile picture not in JWT, use saved
+          };
+          
+          setAppState(prev => ({
+            ...prev,
+            isAuthenticated: true,
+            user: user,
+            isLoading: false
+          }));
+          
+          // Update localStorage with current user data
+          localStorage.setItem('receiptScannerAuth', JSON.stringify({
+            user: user,
+            timestamp: Date.now()
+          }));
+        } else {
+          // Session invalid, clear everything
+          console.log('No valid session found');
+          localStorage.removeItem('receiptScannerAuth');
+          setAppState(prev => ({ 
+            ...prev, 
+            isAuthenticated: false, 
+            user: null,
+            isLoading: false 
+          }));
+        }
+      } catch (error) {
+        console.log('Session validation failed:', error.response?.status);
+        // Session expired or network error, clear auth state
+        localStorage.removeItem('receiptScannerAuth');
+        setAppState(prev => ({ 
+          ...prev, 
+          isAuthenticated: false, 
+          user: null,
+          isLoading: false 
+        }));
+      }
+    };
+
+    checkAuthenticationState();
+  }, [REACT_APP_API_BASE_URL]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -52,69 +138,73 @@ function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Only fetch user data when authenticated
   useEffect(() => {
-    // Load sample data for guest users or user data for authenticated users
     if (appState.isAuthenticated) {
       fetchUserReceipts();
-    } else {
-      loadSampleData();
     }
   }, [appState.isAuthenticated]);
 
+  // 🔧 UPDATED: Handle OAuth redirect response
   useEffect(() => {
-    window.handleGoogleLogin = async (response) => {
-      const idToken = response.credential;
-      handleLogin(idToken);
-    };
-  }, []);
+    const urlParams = new URLSearchParams(window.location.hash.substring(1));
+    const idToken = urlParams.get('id_token');
 
-  // Load sample data for guest exploration
-  const loadSampleData = async () => {
-    try {
-      setAppState(prev => ({ ...prev, isLoading: true }));
-      
-      const response = await fetch('/data/receipts.json');
-      const sampleReceipts = await response.json();
-      
-      // Transform to match API format
-      const transformedData = Object.entries(sampleReceipts).map(([key, receipt]) => ({
-        imageName: key,
-        displayName: receipt.ImageFileName || key,
-        receiptInfo: {
-          ...receipt,
-          HashIdentifier: key,
-          ImageFileName: receipt.ImageFileName || key,
-          ImageUrl: `/data/images/${key}`
-        },
-        isDemo: !appState.isAuthenticated // Mark as demo when not authenticated
-      }));
-      
-      setAppState(prev => ({
-        ...prev,
-        receiptsData: transformedData,
-        isLoading: false
-      }));
-      
-    } catch (error) {
-      console.error('Failed to load sample data:', error);
-      setAppState(prev => ({ 
-        ...prev, 
-        receiptsData: [], 
-        isLoading: false 
-      }));
+    if (idToken) {
+      (async () => {
+        try {
+          setAppState(prev => ({ ...prev, isLoading: true }));
+          
+          const payload = JSON.parse(atob(idToken.split('.')[1]));
+
+          // Send ID token to backend for validation and JWT cookie creation
+          const response = await axios.post(`${REACT_APP_API_BASE_URL}/auth/google-login`, idToken, {
+            headers: { 'Content-Type': 'application/json' },
+            withCredentials: true
+          });
+
+          console.log('Backend login successful:', response.data);
+
+          // Create user object for UI (including profile picture from Google)
+          const user = {
+            sub: payload.sub,
+            name: payload.name,
+            email: payload.email,
+            picture: payload.picture
+          };
+
+          // Save to localStorage for UI persistence (no token needed)
+          const authState = { user, timestamp: Date.now() };
+          localStorage.setItem('receiptScannerAuth', JSON.stringify(authState));
+
+          setAppState(prev => ({
+            ...prev,
+            isAuthenticated: true,
+            user: user,
+            isLoading: false
+          }));
+
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (error) {
+          console.error('Failed to process Google login:', error);
+          setError('Failed to process login. Please try again.');
+          setAppState(prev => ({ ...prev, isLoading: false }));
+        }
+      })();
     }
-  };
+  }, [REACT_APP_API_BASE_URL]);
 
-  // Fetch authenticated user's receipts
+  // 🔧 UPDATED: Fetch authenticated user's receipts (no Authorization header)
   const fetchUserReceipts = async () => {
     try {
       setAppState(prev => ({ ...prev, isLoading: true }));
       
+      // No Authorization header needed - uses session cookie automatically
       const response = await axios.get(`${REACT_APP_API_BASE_URL}/Receipt`, {
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${appState.user?.token}`
+          'Content-Type': 'application/json'
         }
       });
       
@@ -128,12 +218,34 @@ function App() {
       
     } catch (error) {
       console.error('Error fetching user receipts:', error);
-      setAppState(prev => ({
-        ...prev,
-        receiptsData: [], // Empty is normal for new users
-        isLoading: false
-      }));
+      
+      // If 401, session expired
+      if (error.response?.status === 401) {
+        console.log('Session expired, logging out');
+        handleSessionExpired();
+      } else {
+        setAppState(prev => ({
+          ...prev,
+          receiptsData: [], // Empty is normal for new users
+          isLoading: false
+        }));
+      }
     }
+  };
+
+  // 🆕 NEW: Handle session expiration
+  const handleSessionExpired = () => {
+    localStorage.removeItem('receiptScannerAuth');
+    setAppState({
+      isAuthenticated: false,
+      user: null,
+      receiptsData: [],
+      isLoading: false
+    });
+    setReceiptData(null);
+    setActiveTab('upload');
+    setShowProfileModal(false);
+    setError('Your session has expired. Please sign in again.');
   };
 
   // Handle successful upload
@@ -141,19 +253,14 @@ function App() {
     console.log('Upload successful:', data);
     setReceiptData(data);
     
-    // For authenticated users, refresh their data
-    if (appState.isAuthenticated) {
-      fetchUserReceipts();
-    }
-    
+    // Refresh user's receipts
+    fetchUserReceipts();
     setActiveTab('edit');
   };
 
   // Handle successful save/update
   const handleUpdateSuccess = () => {
-    if (appState.isAuthenticated) {
-      fetchUserReceipts();
-    }
+    fetchUserReceipts();
     setActiveTab('history');
   };
 
@@ -168,61 +275,61 @@ function App() {
     setActiveTab('upload');
   };
 
-  // Handle user login with real Google authentication
-  const handleLogin = async (googleToken) => {
-    try {
-      // Decode the Google JWT token to get real user info
-      const payload = JSON.parse(atob(googleToken.split('.')[1]));
-      
-      const user = {
-        token: googleToken,
-        name: payload.name,
-        email: payload.email,
-        picture: payload.picture
-      };
-      
-      console.log('Real user logged in:', user);
-      
-      // Save to localStorage for persistence
-      const authState = {
-        user: user,
-        timestamp: Date.now() // Optional: track when they logged in
-      };
-      localStorage.setItem('receiptScannerAuth', JSON.stringify(authState));
-      
-      setAppState(prev => ({
-        ...prev,
-        isAuthenticated: true,
-        user: user
-      }));
-      
-    } catch (error) {
-      console.error('Login failed:', error);
-      setError('Failed to process login. Please try again.');
-    }
+  // Handle custom Google sign-in button click
+  const handleGoogleSignIn = () => {
+    setAppState(prev => ({ ...prev, isLoading: true }));
+    
+    // Create Google OAuth URL to get ID token
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=397273423931-lgcm6halp6l5ifcnhqt88ua6veuvhgqr.apps.googleusercontent.com&` +
+      `redirect_uri=${encodeURIComponent(window.location.origin)}&` +
+      `response_type=id_token token&` +
+      `scope=openid email profile&` +
+      `include_granted_scopes=true&` +
+      `nonce=${Math.random().toString(36).substring(2, 15)}&` +
+      `state=security_token`;
+    
+    // Redirect to Google OAuth
+    window.location.href = googleAuthUrl;
   };
 
-  // Handle logout
-  const handleLogout = () => {
-    // Clear localStorage
+  // 🔧 UPDATED: Handle logout with backend call
+  const handleLogout = async () => {
+    try {
+      // Call backend logout to clear session cookie
+      await axios.post(`${REACT_APP_API_BASE_URL}/auth/logout`);
+    } catch (error) {
+      console.error('Logout API call failed:', error);
+      // Continue with local logout even if API fails
+    }
+    
+    // Clear localStorage and local state
     localStorage.removeItem('receiptScannerAuth');
     
-    setAppState(prev => ({
-      ...prev,
+    setAppState({
       isAuthenticated: false,
       user: null,
-      receiptsData: []
-    }));
+      receiptsData: [],
+      isLoading: false
+    });
     setReceiptData(null);
     setActiveTab('upload');
+    setShowProfileModal(false);
     
     console.log('User logged out');
-    
-    // Reload sample data for guest mode
-    loadSampleData();
   };
 
-  // Get user initials for avatar
+  // Handle profile image loading errors
+  const handleImageError = () => {
+    setProfileImageError(true);
+  };
+
+  // Reset image error when user changes
+  useEffect(() => {
+    setProfileImageError(false);
+  }, [appState.user?.sub]);
+
+  // Get user initials for avatar (fallback)
   const getUserInitials = (name) => {
     if (!name) return 'U';
     return name.split(' ')
@@ -232,13 +339,206 @@ function App() {
       .slice(0, 2);
   };
 
+  // 🔧 UPDATED: Add axios interceptor for automatic logout on 401
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      response => response,
+      error => {
+        if (error.response?.status === 401 && appState.isAuthenticated) {
+          console.log('401 detected, handling session expiration');
+          handleSessionExpired();
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    // Cleanup interceptor on unmount
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, [appState.isAuthenticated]);
+
+  // Profile Modal Component
+  const ProfileModal = () => (
+    <Modal 
+      show={showProfileModal} 
+      onHide={() => setShowProfileModal(false)}
+      centered
+      size="sm"
+    >
+      <Modal.Body className="text-center p-4">
+        <div className="mb-3">
+          {appState.user?.picture && !profileImageError ? (
+            <img
+              src={appState.user.picture}
+              alt="Profile"
+              className="profile-modal-avatar"
+              onError={handleImageError}
+              onLoad={() => setProfileImageError(false)}
+            />
+          ) : (
+            <div className="profile-modal-avatar-fallback">
+              {getUserInitials(appState.user?.name)}
+            </div>
+          )}
+        </div>
+        
+        <h5 className="mb-2" style={{ fontWeight: '600', color: '#2c3e50' }}>
+          {appState.user?.name}
+        </h5>
+        <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>
+          {appState.user?.email}
+        </p>
+        
+        <div className="d-grid gap-2">
+          <Button
+            variant="outline-danger"
+            onClick={handleLogout}
+            className="logout-btn"
+          >
+            <i className="bi bi-box-arrow-right me-2"></i>
+            Sign Out
+          </Button>
+        </div>
+      </Modal.Body>
+    </Modal>
+  );
+
+  // Landing page for non-authenticated users
+  const LandingPage = () => (
+    <Container className="mt-5">
+      <Row className="justify-content-center">
+        <Col xs={12} md={8} lg={6}>
+          <Card className="text-center shadow-lg border-0" style={{ borderRadius: '1rem' }}>
+            <Card.Body className="p-5">
+              {/* App Logo/Icon */}
+              <div className="mb-4" style={{ fontSize: '4rem' }}>📄</div>
+              
+              {/* Welcome Message */}
+              <h1 className="mb-4" style={{ fontWeight: '700', color: '#2c3e50' }}>
+                Welcome to Receipt Scanner
+              </h1>
+              
+              <p className="lead mb-4" style={{ color: '#6c757d' }}>
+                Too many grocery receipts? Wondering what you've been buying? 
+                Get organized and discover insights about your shopping habits with AI-powered receipt analysis.
+              </p>
+              
+              {/* Feature Highlights */}
+              <Row className="mb-5">
+                <Col xs={12} md={4} className="mb-3">
+                  <div className="feature-highlight">
+                    <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🤖</div>
+                    <h6 style={{ fontWeight: '600' }}>Smart Scanning</h6>
+                    <small className="text-muted">
+                      AI automatically reads and organizes all your receipt data
+                    </small>
+                  </div>
+                </Col>
+                <Col xs={12} md={4} className="mb-3">
+                  <div className="feature-highlight">
+                    <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📊</div>
+                    <h6 style={{ fontWeight: '600' }}>Shopping Insights</h6>
+                    <small className="text-muted">
+                      Discover spending patterns and see what you buy most often
+                    </small>
+                  </div>
+                </Col>
+                <Col xs={12} md={4} className="mb-3">
+                  <div className="feature-highlight">
+                    <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🛒</div>
+                    <h6 style={{ fontWeight: '600' }}>Receipt Manager</h6>
+                    <small className="text-muted">
+                      Keep all your receipts organized and easily searchable
+                    </small>
+                  </div>
+                </Col>
+              </Row>
+              
+              {/* Call to Action */}
+              <div className="mb-4">
+                <h5 style={{ fontWeight: '600', color: '#495057' }}>
+                  Ready to organize your receipts?
+                </h5>
+                <p className="text-muted mb-4">
+                  Sign in with Google to start scanning receipts and discovering your shopping patterns.
+                </p>
+              </div>
+              
+              {/* Custom Google Sign-In Button */}
+              <div className="d-flex justify-content-center">
+                <Button
+                  variant="outline-primary"
+                  size="lg"
+                  onClick={handleGoogleSignIn}
+                  className="custom-google-signin-btn px-4 py-3"
+                  disabled={appState.isLoading}
+                >
+                  {appState.isLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                      Signing in...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="me-2" width="20" height="20" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      </svg>
+                      Sign in with Google
+                    </>
+                  )}
+                </Button>
+              </div>
+                          
+              {/* Privacy Notice */}
+              <small className="text-muted mt-4 d-block">
+                🔒 Your receipt data is securely stored and only accessible to you.
+              </small>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
+    </Container>
+  );
+
+  // If not authenticated, show landing page
+  if (!appState.isAuthenticated) {
+    return (
+      <>
+        <Navbar bg="dark" variant="dark" expand="lg">
+          <Container>
+            <Navbar.Brand href="#home">
+              Receipt Scanner
+            </Navbar.Brand>
+            <Nav className="ms-auto">
+              <span className="navbar-text text-light">
+                Sign in to get started
+              </span>
+            </Nav>
+          </Container>
+        </Navbar>
+        
+        <LandingPage />
+        
+        {error && (
+          <Container className="mt-3">
+            <Alert variant="danger" dismissible onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          </Container>
+        )}
+      </>
+    );
+  }
+
+  // Main application for authenticated users
   return (
     <>
-      <Navbar bg="dark" variant="dark" expand="lg">
+      <Navbar bg="secondary" variant="dark" expand="lg">
         <Container>
-          <Navbar.Brand href="#home">
-            Receipt Scanner 
-          </Navbar.Brand>
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
             <Nav className="me-auto">
@@ -258,54 +558,32 @@ function App() {
               </Nav.Link>
             </Nav>
             <Nav>
-              {!appState.isAuthenticated ? (
-                <div id="googleSignInWrapper">
-                  <div
-                    id="g_id_onload"
-                    data-client_id="397273423931-lgcm6halp6l5ifcnhqt88ua6veuvhgqr.apps.googleusercontent.com"
-                    data-callback="handleGoogleLogin"
-                    data-auto_prompt="false"
-                  ></div>
-                  <div
-                    className="g_id_signin"
-                    data-type="standard"
-                    data-size="large"
-                    data-theme="outline"
-                    data-text="sign_in_with"
-                    data-shape="rectangular"
-                    data-logo_alignment="left"
-                  ></div>
-                </div>
-              ) : (
-                <Dropdown align="end">
-                  <Dropdown.Toggle 
-                    variant="link" 
-                    id="user-dropdown"
-                    className="user-avatar-btn p-0 border-0"
-                  >
-                    <div className="user-avatar">
-                      {getUserInitials(appState.user?.name)}
-                    </div>
-                  </Dropdown.Toggle>
-                  
-                  <Dropdown.Menu>
-                    <Dropdown.ItemText>
-                      <strong>{appState.user?.name}</strong>
-                      <br />
-                      <small className="text-muted">{appState.user?.email}</small>
-                    </Dropdown.ItemText>
-                    <Dropdown.Divider />
-                    <Dropdown.Item onClick={handleLogout}>
-                      <i className="bi bi-box-arrow-right me-2"></i>
-                      Sign Out
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown>
-              )}
+              {/* Profile Photo/Avatar */}
+              <div 
+                className="user-avatar-container"
+                onClick={() => setShowProfileModal(true)}
+              >
+                {appState.user?.picture && !profileImageError ? (
+                  <img
+                    src={appState.user.picture}
+                    alt="Profile"
+                    className="user-avatar-image"
+                    onError={handleImageError}
+                    onLoad={() => setProfileImageError(false)}
+                  />
+                ) : (
+                  <div className="user-avatar-fallback">
+                    {getUserInitials(appState.user?.name)}
+                  </div>
+                )}
+              </div>
             </Nav>
           </Navbar.Collapse>
         </Container>
       </Navbar>
+
+      {/* Profile Modal */}
+      <ProfileModal />
 
       <Container className="mt-4">
         {error && (
@@ -329,7 +607,6 @@ function App() {
           <ImageUploader 
             onUploadSuccess={handleUploadSuccess}
             isAuthenticated={appState.isAuthenticated}
-            userToken={appState.user?.token}
           />
         )}
 
@@ -338,15 +615,12 @@ function App() {
             receiptData={receiptData}
             onUpdateSuccess={handleUpdateSuccess}
             isAuthenticated={appState.isAuthenticated}
-            userToken={appState.user?.token}
           />
         )}
 
         {activeTab === 'dashboard' && (
           <Dashboard 
             receiptsData={appState.receiptsData}
-            isAuthenticated={appState.isAuthenticated}
-            userToken={appState.user?.token}
           />
         )}
 
@@ -355,15 +629,59 @@ function App() {
             receiptsData={appState.receiptsData}
             onEditReceipt={handleEditReceipt}
             onAddNewReceipt={handleAddNewReceipt}
+            onDeleteSuccess={handleDeleteSuccess}
             isAuthenticated={appState.isAuthenticated}
-            userToken={appState.user?.token}
           />
         )}
       </Container>
 
-      {/* Avatar Styles */}
-      <style jsx>{`
-        .user-avatar {
+      {/* Custom Styles */}
+      <style>{`
+        .custom-google-signin-btn {
+          font-weight: 600;
+          border: 2px solid #4285F4;
+          color: #4285F4;
+          background: white;
+          transition: all 0.3s ease;
+          min-width: 240px;
+        }
+        
+        .custom-google-signin-btn:hover {
+          background: #4285F4;
+          color: white;
+          border-color: #4285F4;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
+        }
+        
+        .custom-google-signin-btn:focus {
+          box-shadow: 0 0 0 0.2rem rgba(66, 133, 244, 0.25);
+        }
+        
+        .custom-google-signin-btn:disabled {
+          opacity: 0.7;
+          transform: none;
+        }
+        
+        .user-avatar-container {
+          cursor: pointer;
+          padding: 4px;
+          transition: transform 0.2s ease;
+        }
+        
+        .user-avatar-container:hover {
+          transform: scale(1.05);
+        }
+        
+        .user-avatar-image {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.2);
+          object-fit: cover;
+        }
+        
+        .user-avatar-fallback {
           width: 36px;
           height: 36px;
           border-radius: 50%;
@@ -374,17 +692,69 @@ function App() {
           color: white;
           font-weight: 600;
           font-size: 14px;
-          cursor: pointer;
           border: 2px solid rgba(255,255,255,0.2);
         }
-
-        .user-avatar:hover {
-          transform: scale(1.05);
+        
+        .profile-modal-avatar {
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          border: 3px solid #e9ecef;
+          object-fit: cover;
+        }
+        
+        .profile-modal-avatar-fallback {
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-weight: 600;
+          font-size: 28px;
+          margin: 0 auto;
+          border: 3px solid #e9ecef;
+        }
+        
+        .logout-btn {
+          border-color: #dc3545;
+          color: #dc3545;
+          font-weight: 500;
+          transition: all 0.2s ease;
+        }
+        
+        .logout-btn:hover {
+          background-color: #dc3545;
+          border-color: #dc3545;
+          color: white;
+        }
+        
+        .feature-highlight {
+          padding: 1rem;
           transition: transform 0.2s ease;
         }
         
-        .user-avatar-btn:focus {
-          box-shadow: none !important;
+        .feature-highlight:hover {
+          transform: translateY(-2px);
+        }
+        
+        @media (max-width: 767.98px) {
+          .feature-highlight {
+            padding: 0.75rem;
+          }
+          
+          .custom-google-signin-btn {
+            min-width: 200px;
+          }
+          
+          .user-avatar-image,
+          .user-avatar-fallback {
+            width: 32px;
+            height: 32px;
+            font-size: 12px;
+          }
         }
       `}</style>
     </>

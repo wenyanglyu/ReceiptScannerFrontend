@@ -30,10 +30,7 @@ const BUBBLE_DESIGNS = [
 
 const PhysicsBubblesChart = ({ 
   receiptsData = [],
-  isAuthenticated = false,
-  isDemoMode = true,
-  processedItems = null,
-  userToken = null
+  processedItems = null
 }) => {
   const svgRef = useRef();
   const containerRef = useRef();
@@ -56,63 +53,99 @@ const PhysicsBubblesChart = ({
   const simulationRef = useRef();
 
   useEffect(() => {
-    const detectInitialContainerSize = () => {
-      const container = containerRef.current;
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        const realWidth = rect.width || container.clientWidth;
-        const realHeight = rect.height || container.clientHeight;
-        
-        // Only update if we get valid real dimensions
-        if (realWidth > 0 && realHeight > 0) {
-          setDimensions(prev => {
-            console.log('[BUBBLES] 📐 Initial container detection:', {
-              from: { width: prev.width, height: prev.height, source: prev.source },
-              to: { width: realWidth, height: realHeight, source: 'container-initial' }
-            });
-            
-            return {
-              width: realWidth,
-              height: realHeight,
-              source: 'container-initial'
-            };
+  const detectInitialContainerSize = () => {
+    const container = containerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const realWidth = rect.width || container.clientWidth;
+      const realHeight = rect.height || container.clientHeight;
+      
+      // Only update if we get valid real dimensions
+      if (realWidth > 0 && realHeight > 0) {
+        setDimensions(prev => {
+          console.log('[BUBBLES] 📐 Initial container detection:', {
+            from: { width: prev.width, height: prev.height, source: prev.source },
+            to: { width: realWidth, height: realHeight, source: 'container-initial' }
           });
           
-          setIsMobile(realWidth <= 768);
-        }
-      }
-    };
-    detectInitialContainerSize(); // Immediate
-    
-    const timeouts = [
-      setTimeout(detectInitialContainerSize, 50),   // After 50ms
-      setTimeout(detectInitialContainerSize, 100),  // After 100ms
-      setTimeout(detectInitialContainerSize, 200),  // After 200ms
-      setTimeout(detectInitialContainerSize, 500),  // After 500ms (final fallback)
-    ];
-    
-    return () => {
-      timeouts.forEach(clearTimeout);
-    };
-  }, []); // Run once on mount
-  
-  // Process data based on mode (demo vs authenticated)
-  useEffect(() => {
-    const processData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        console.log('[BUBBLES] Processing data:', {
-          isDemoMode,
-          isAuthenticated,
-          receiptsDataLength: receiptsData?.length || 0,
-          processedItemsLength: processedItems?.length || 0
+          return {
+            width: realWidth,
+            height: realHeight,
+            source: 'container-initial'
+          };
         });
+        
+        setIsMobile(realWidth <= 768);
+      }
+    }
+  };
+  detectInitialContainerSize(); // Immediate
+  
+  const timeouts = [
+    setTimeout(detectInitialContainerSize, 50),   // After 50ms
+    setTimeout(detectInitialContainerSize, 100),  // After 100ms
+    setTimeout(detectInitialContainerSize, 200),  // After 200ms
+    setTimeout(detectInitialContainerSize, 500),  // After 500ms (final fallback)
+  ];
+  
+  return () => {
+    timeouts.forEach(clearTimeout);
+  };
+}, []); // Run once on mount
 
-        if (isDemoMode && receiptsData && receiptsData.length > 0) {
-          // Use demo/anonymous data directly
-          console.log('[BUBBLES] Processing demo data:', receiptsData.length, 'receipts');
+// Process authenticated user's data
+useEffect(() => {
+  const processData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('[BUBBLES] Processing authenticated user data:', {
+        receiptsDataLength: receiptsData?.length || 0,
+        processedItemsLength: processedItems?.length || 0
+      });
+
+      // Try API first for authenticated users
+      try {
+        console.log('[BUBBLES] Fetching authenticated data from API');
+        
+        const headers = {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        };
+
+        const response = await fetch(`${REACT_APP_API_BASE_URL}/Receipt/stats/items`, { headers });
+        
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        const maxItems = isMobile ? 20 : 100;
+
+        const formattedData = data
+          .map(item => ({
+            name: item.name || item.itemName || item.item || 'Unknown Item',
+            frequency: item.frequency || item.purchaseCount || item.times || item.count || 0,
+            totalSpent: parseFloat(item.totalSpent || item.totalAmount || item.amount || item.total || 0)
+          }))
+          .sort((a, b) => b.frequency - a.frequency)
+          .slice(0, maxItems);
+        
+        if (formattedData.length === 0) {
+          throw new Error('No items found in API response');
+        }
+        
+        console.log('[BUBBLES] API data processed:', formattedData.length, 'items');
+        setItemData(formattedData);
+        setLoading(false);
+        
+      } catch (apiError) {
+        console.warn('[BUBBLES] API failed, falling back to local data:', apiError.message);
+        
+        // Fallback to local data processing
+        if (receiptsData && receiptsData.length > 0) {
+          console.log('[BUBBLES] Processing local data:', receiptsData.length, 'receipts');
           
           // Use pre-processed items if available, otherwise calculate
           let items = processedItems || [];
@@ -156,104 +189,65 @@ const PhysicsBubblesChart = ({
               .slice(0, isMobile ? 20 : 100);
           }
 
-          console.log('[BUBBLES] Demo data processed:', items.length, 'items');
+          console.log('[BUBBLES] Local data processed:', items.length, 'items');
           setItemData(items);
           setLoading(false);
-
-        } else if (isAuthenticated && !isDemoMode) {
-          // Fetch from API for authenticated users
-          console.log('[BUBBLES] Fetching authenticated data from API');
-          
-          const headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          };
-          
-          if (userToken) {
-            headers['Authorization'] = `Bearer ${userToken}`;
-          }
-          
-          const response = await fetch(`${REACT_APP_API_BASE_URL}/Receipt/stats/items`, { headers });
-          
-          if (!response.ok) {
-            throw new Error(`API Error: ${response.status} ${response.statusText}`);
-          }
-          
-          const data = await response.json();
-          const maxItems = isMobile ? 20 : 100;
-
-          const formattedData = data
-            .map(item => ({
-              name: item.name || item.itemName || item.item || 'Unknown Item',
-              frequency: item.frequency || item.purchaseCount || item.times || item.count || 0,
-              totalSpent: parseFloat(item.totalSpent || item.totalAmount || item.amount || item.total || 0)
-            }))
-            .sort((a, b) => b.frequency - a.frequency)
-            .slice(0, maxItems);
-          
-          if (formattedData.length === 0) {
-            throw new Error('No items found in API response');
-          }
-          
-          console.log('[BUBBLES] API data processed:', formattedData.length, 'items');
-          setItemData(formattedData);
-          setLoading(false);
-          
         } else {
-          // No data available or mixed mode
-          console.log('[BUBBLES] No data available or mixed mode');
+          // No data available
+          console.log('[BUBBLES] No data available');
           setItemData([]);
           setLoading(false);
         }
-
-      } catch (err) {
-        console.error('[BUBBLES] Error processing data:', err);
-        setError(`Failed to load item data: ${err.message}`);
-        setLoading(false);
       }
-    };
 
-    processData();
-  }, [receiptsData, isAuthenticated, isDemoMode, processedItems, isMobile, userToken]);
-  
-  // Handle window resize and mobile detection
-  useEffect(() => {
-    const handleResize = () => {
-      const container = containerRef.current;
-      if (container) {
-        const rect = container.getBoundingClientRect();
-        const realWidth = rect.width || container.clientWidth;
-        const realHeight = rect.height || container.clientHeight;
-        
-        if (realWidth > 0 && realHeight > 0) {
-          setDimensions(prev => {
-            // Only update if significantly different
-            const widthDiff = Math.abs(prev.width - realWidth);
-            const heightDiff = Math.abs(prev.height - realHeight);
-            
-            if (widthDiff > 10 || heightDiff > 10) {
-              console.log('[BUBBLES] 📐 Resize container detection:', {
-                from: { width: prev.width, height: prev.height, source: prev.source },
-                to: { width: realWidth, height: realHeight, source: 'container-resize' }
-              });
-              
-              return {
-                width: realWidth,
-                height: realHeight,
-                source: 'container-resize'
-              };
-            }
-            return prev;
-          });
+    } catch (err) {
+      console.error('[BUBBLES] Error processing data:', err);
+      setError(`Failed to load item data: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  processData();
+}, [receiptsData, processedItems, isMobile]);
+
+// Handle window resize and mobile detection
+useEffect(() => {
+  const handleResize = () => {
+    const container = containerRef.current;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const realWidth = rect.width || container.clientWidth;
+      const realHeight = rect.height || container.clientHeight;
+      
+      if (realWidth > 0 && realHeight > 0) {
+        setDimensions(prev => {
+          // Only update if significantly different
+          const widthDiff = Math.abs(prev.width - realWidth);
+          const heightDiff = Math.abs(prev.height - realHeight);
           
-          setIsMobile(realWidth <= 768);
-        }
+          if (widthDiff > 10 || heightDiff > 10) {
+            console.log('[BUBBLES] 📐 Resize container detection:', {
+              from: { width: prev.width, height: prev.height, source: prev.source },
+              to: { width: realWidth, height: realHeight, source: 'container-resize' }
+            });
+            
+            return {
+              width: realWidth,
+              height: realHeight,
+              source: 'container-resize'
+            };
+          }
+          return prev;
+        });
+        
+        setIsMobile(realWidth <= 768);
       }
-    };
+    }
+  };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  window.addEventListener('resize', handleResize);
+  return () => window.removeEventListener('resize', handleResize);
+}, []);
 
   useEffect(() => {
     if (!itemData.length || loading || error) return;
@@ -478,7 +472,7 @@ const PhysicsBubblesChart = ({
       .style('text-align', 'center')
       .style('z-index', '3')
       .style('line-height', '1')
-      .text(d => viewMode === 'frequency' ? `${d.frequency}x` : `$${d.totalSpent.toFixed(0)}`);
+      .text(d => viewMode === 'frequency' ? `${d.frequency}x` : `${d.totalSpent.toFixed(0)}`);
 
     bubbleGroups
       .on('mouseenter', function(event, d) {
@@ -604,100 +598,79 @@ const PhysicsBubblesChart = ({
     };
   }, [itemData, viewMode, dimensions, loading, error, isMobile]);
 
-  if (loading) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '400px',
-        background: '#2c2f36',
-        borderRadius: '1rem',
-        color: 'white'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ 
-            width: '40px', 
-            height: '40px', 
-            border: '4px solid rgba(255,255,255,0.3)',
-            borderTop: '4px solid #00f5cc',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem'
-          }} />
-          <p>Loading popular items...</p>
-          {isDemoMode && (
-            <small style={{ color: '#ccc' }}>
-              {isAuthenticated ? 'Loading your saved items...' : 'Processing demo data...'}
-            </small>
-          )}
-        </div>
+if (loading) {
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      height: '400px',
+      background: '#2c2f36',
+      borderRadius: '1rem',
+      color: 'white'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ 
+          width: '40px', 
+          height: '40px', 
+          border: '4px solid rgba(255,255,255,0.3)',
+          borderTop: '4px solid #00f5cc',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          margin: '0 auto 1rem'
+        }} />
+        <p>Loading popular items...</p>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (error) {
-    return (
-      <div style={{
-        padding: '2rem',
-        background: '#fee',
-        border: '1px solid #fcc',
-        borderRadius: '1rem',
-        color: '#c33',
-        textAlign: 'center'
-      }}>
-        <h3>Error Loading Item Data</h3>
-        <p>{error}</p>
-        {!isDemoMode ? (
-          <button 
-            onClick={() => window.location.reload()}
-            style={{
-              padding: '0.5rem 1rem',
-              background: '#c33',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: 'pointer'
-            }}
-          >
-            Retry
-          </button>
-        ) : (
-          <p style={{ color: '#666', fontSize: '0.9em' }}>
-            Demo mode: Try uploading receipts to see popular items
-          </p>
-        )}
-      </div>
-    );
-  }
+ if (error) {
+  return (
+    <div style={{
+      padding: '2rem',
+      background: '#fee',
+      border: '1px solid #fcc',
+      borderRadius: '1rem',
+      color: '#c33',
+      textAlign: 'center'
+    }}>
+      <h3>Error Loading Item Data</h3>
+      <p>{error}</p>
+      <button 
+        onClick={() => window.location.reload()}
+        style={{
+          padding: '0.5rem 1rem',
+          background: '#c33',
+          color: 'white',
+          border: 'none',
+          borderRadius: '0.5rem',
+          cursor: 'pointer'
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
   
-  if (itemData.length === 0) {
-    return (
-      <div style={{
-        padding: '2rem',
-        background: isDemoMode ? '#e6f3ff' : '#f8f9fa',
-        border: '1px solid #b3d9ff',
-        borderRadius: '1rem',
-        color: '#0066cc',
-        textAlign: 'center'
-      }}>
-        <h5>No Popular Items Yet</h5>
-        <p className="mb-0">
-          {isDemoMode 
-            ? isAuthenticated
-              ? "Upload some receipts to see your most frequently purchased items as interactive bubbles."
-              : "Upload receipts to see popular items, or sign in to save your data permanently."
-            : "Upload some receipts to see your most frequently purchased items as interactive bubbles."
-          }
-        </p>
-        {isDemoMode && !isAuthenticated && (
-          <small style={{ color: '#666', marginTop: '0.5rem', display: 'block' }}>
-            Demo Mode: Items will be shown temporarily during this session
-          </small>
-        )}
-      </div>
-    );
-  }
+if (itemData.length === 0) {
+  return (
+    <div style={{
+      padding: '2rem',
+      background: '#f8f9fa',
+      border: '1px solid #dee2e6',
+      borderRadius: '1rem',
+      color: '#6c757d',
+      textAlign: 'center'
+    }}>
+      <h5>No Popular Items Yet</h5>
+      <p className="mb-0">
+        Upload some receipts to see your most frequently purchased items as interactive bubbles.
+      </p>
+    </div>
+  );
+}
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>

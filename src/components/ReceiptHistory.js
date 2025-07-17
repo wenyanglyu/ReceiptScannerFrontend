@@ -11,8 +11,8 @@ const ReceiptHistory = ({
   receiptsData = [],
   onEditReceipt, 
   onAddNewReceipt,
-  isAuthenticated = false,
-  userToken = null
+  onDeleteSuccess,
+  isAuthenticated = true // Always authenticated now
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -28,27 +28,22 @@ const ReceiptHistory = ({
   });
 
   const getWorkingImageUrl = (receipt) => {
-  const imageUrl = receipt.receiptInfo?.imageUrl || receipt.receiptInfo?.ImageUrl;
-  const hashId = receipt.imageName;
+    const imageUrl = receipt.receiptInfo?.imageUrl || receipt.receiptInfo?.ImageUrl;
+    const hashId = receipt.imageName;
 
-  // For sample/local images
-  if (imageUrl && imageUrl.startsWith('/data/')) {
-    return imageUrl;
-  }
+    // For real receipts, always use API proxy
+    if (hashId) {
+      return `${process.env.REACT_APP_API_BASE_URL}/receipt/image/${hashId}`;
+    }
 
-  // For real receipts, always use API proxy (no auth check needed since endpoint is now public)
-  if (hashId) {
-    return `${process.env.REACT_APP_API_BASE_URL}/receipt/image/${hashId}`;
-  }
-
-  return imageUrl || '/placeholder-receipt.png';
-};
-
-useEffect(() => {
-  const handleResize = () => {
-    const newViewMode = window.innerWidth >= 768 ? 'table' : 'cards';
-    setViewMode(newViewMode);
+    return imageUrl || '/placeholder-receipt.png';
   };
+
+  useEffect(() => {
+    const handleResize = () => {
+      const newViewMode = window.innerWidth >= 768 ? 'table' : 'cards';
+      setViewMode(newViewMode);
+    };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
@@ -144,101 +139,111 @@ useEffect(() => {
       }, 0);
   };
 
-  const handleDeleteSelected = async () => {
-    if (selectedReceipts.length === 0) return;
+  // In ReceiptHistory.js, update the handleDeleteSelected function:
+const handleDeleteSelected = async () => {
+  if (selectedReceipts.length === 0) return;
 
-    // Check if user is authenticated
-    if (!isAuthenticated) {
-      setError('Please sign in to delete receipts permanently');
-      return;
-    }
+  if (window.confirm(`Are you sure you want to delete ${selectedReceipts.length} receipt(s)?`)) {
+    try {
+      setLoading(true);
+      
+      console.log('Deleting receipts:', selectedReceipts); // Add this
 
-    if (window.confirm(`Are you sure you want to delete ${selectedReceipts.length} receipt(s)?`)) {
-      try {
-        setLoading(true);
-
-        const response = await axios.post(`${REACT_APP_API_BASE_URL}/Receipt/delete-multiple`, {
-          imageNames: selectedReceipts
-        }, {
-          headers: {
-            'Authorization': `Bearer ${userToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
+      const response = await axios.post(`${REACT_APP_API_BASE_URL}/Receipt/delete-multiple`, {
+        imageNames: selectedReceipts
+      }, {
+        headers: {
+           'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Delete response:', response.data); // Add this
+      
+      if (response.data.success) {
+        setSelectedReceipts([]);
+        setError('');
         
-        if (response.data.success) {
-          setSelectedReceipts([]);
-          setError('');
-          // Parent component will refresh data
-          window.location.reload(); // Simple refresh for now
+        // Add detailed logging
+        console.log('Delete successful, refreshing data...');
+        
+        // Force refresh the parent component's data
+        if (onDeleteSuccess && typeof onDeleteSuccess === 'function') {
+          console.log('Calling onDeleteSuccess callback');
+          onDeleteSuccess(selectedReceipts);
         } else {
-          setError('Failed to delete receipts. Please try again.');
+          console.log('No onDeleteSuccess callback provided');
+          // Fallback: force page reload
+          window.location.reload();
         }
-      } catch (err) {
-        console.error('Error deleting receipts:', err);
-        if (err.response?.status === 401) {
-          setError('Authentication failed. Please sign in again.');
-        } else {
-          setError(`Failed to delete receipts: ${err.response?.data?.message || err.message}`);
-        }
-      } finally {
-        setLoading(false);
+      } else {
+        console.log('Delete failed:', response.data);
+        setError('Failed to delete receipts. Please try again.');
       }
+    } catch (err) {
+      console.error('Error deleting receipts:', err);
+      if (err.response?.status === 401) {
+        setError('Authentication failed. Please sign in again.');
+      } else {
+        setError(`Failed to delete receipts: ${err.response?.data?.message || err.message}`);
+      }
+    } finally {
+      setLoading(false);
     }
-  };
+  }
+};
 
   const sortedReceipts = getSortedItems();
 
-  // Show empty state when authenticated user has no data
-  if (isAuthenticated && receiptsData.length === 0) {
-    return (
-      <Card className="text-center py-5">
-        <Card.Body>
-          <div className="welcome-screen">
-            <div className="welcome-icon mb-4" style={{ fontSize: '4rem' }}>📄</div>
-            <h2>Welcome to Receipt Scanner!</h2>
-            <p className="text-muted mb-4">
-              Get started by uploading your first receipt
-            </p>
-            
-            <div className="d-grid gap-2 col-6 mx-auto">
-              <Button 
-                variant="primary" 
-                size="lg"
-                onClick={() => onAddNewReceipt()}
-              >
-                📤 Upload Your First Receipt
-              </Button>
-            </div>
-            
-            <div className="features-preview mt-5">
-              <h6>What you'll get:</h6>
-              <div className="row text-center mt-3">
-                <div className="col-md-4">
-                  <div className="feature-item">
-                    <div style={{ fontSize: '2rem' }}>🤖</div>
-                    <small>AI Processing</small>
-                  </div>
+  // Show empty state when user has no data
+if (receiptsData.length === 0) {
+  return (
+    <Card className="text-center py-5">
+      <Card.Body>
+        <div className="welcome-screen">
+          <div className="welcome-icon mb-4" style={{ fontSize: '4rem' }}>🛒</div>
+          <h2>Start Managing Your Receipts!</h2>
+          <p className="text-muted mb-4">
+            Upload your grocery receipts to see spending insights and track what you buy most often
+          </p>
+          
+          <div className="d-grid gap-2 col-6 mx-auto">
+            <Button 
+              variant="primary" 
+              size="lg"
+              onClick={() => onAddNewReceipt()}
+            >
+              📤 Upload Your First Receipt
+            </Button>
+          </div>
+          
+          <div className="features-preview mt-5">
+            <h6>What you'll discover:</h6>
+            <div className="row text-center mt-3">
+              <div className="col-md-4">
+                <div className="feature-item">
+                  <div style={{ fontSize: '2rem' }}>📊</div>
+                  <small>Spending Patterns</small>
                 </div>
-                <div className="col-md-4">
-                  <div className="feature-item">
-                    <div style={{ fontSize: '2rem' }}>📊</div>
-                    <small>Smart Analytics</small>
-                  </div>
+              </div>
+              <div className="col-md-4">
+                <div className="feature-item">
+                  <div style={{ fontSize: '2rem' }}>🛍️</div>
+                  <small>Favorite Items</small>
                 </div>
-                <div className="col-md-4">
-                  <div className="feature-item">
-                    <div style={{ fontSize: '2rem' }}>☁️</div>
-                    <small>Cloud Storage</small>
-                  </div>
+              </div>
+              <div className="col-md-4">
+                <div className="feature-item">
+                  <div style={{ fontSize: '2rem' }}>📝</div>
+                  <small>Organized Receipts</small>
                 </div>
               </div>
             </div>
           </div>
-        </Card.Body>
-      </Card>
-    );
-  }
+        </div>
+      </Card.Body>
+    </Card>
+  );
+}
 
   // Mobile Card Component for Individual Receipt
   const ReceiptCard = ({ receipt }) => (
@@ -736,7 +741,7 @@ useEffect(() => {
       </Modal>
 
       {/* Custom Styles */}
-      <style jsx>{`
+      <style>{`
         .sortable-header {
           cursor: pointer;
           user-select: none;

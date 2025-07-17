@@ -5,7 +5,7 @@ import ItemBubblesChart from './ItemBubblesChart';
 import SpendingTrends from './SpendingTrends';
 import CategoryPieChart from './CategoryPieChart';
 
-const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => {
+const Dashboard = ({ receiptsData }) => {
   const [activeTab, setActiveTab] = useState('items');
   const [viewMode, setViewMode] = useState(() => {
     return window.innerWidth >= 768 ? 'split' : 'tabs';
@@ -105,23 +105,6 @@ const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => 
 
   return (
     <Container fluid className="dashboard-container">
-      {/* Demo Mode Info Banner */}
-      {isDemoMode && (
-        <Card className="mb-3 border-info">
-          <Card.Body className="py-2">
-            <div className="d-flex justify-content-between align-items-center">
-              <small className="text-info">
-                <strong>Demo Mode:</strong> Viewing {processedData.totalReceipts} receipts • 
-                Total: ${processedData.totalSpent.toFixed(2)}
-              </small>
-              <small className="text-muted">
-                Sign in to see your personal analytics
-              </small>
-            </div>
-          </Card.Body>
-        </Card>
-      )}
-
       {/* Desktop: Stacked view for better chart sizing */}
       {viewMode === 'split' && (
         <>
@@ -136,8 +119,6 @@ const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => 
                 <Card.Body style={{ minHeight: '500px' }}>
                   <ItemBubblesChart 
                     receiptsData={receiptsData}
-                    isAuthenticated={isAuthenticated}
-                    isDemoMode={isDemoMode}
                     processedItems={processedData.items}
                   />
                 </Card.Body>
@@ -156,8 +137,6 @@ const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => 
                 <Card.Body style={{ minHeight: '500px' }}>
                   <SpendingTrends 
                     receiptsData={receiptsData}
-                    isAuthenticated={isAuthenticated}
-                    isDemoMode={isDemoMode}
                     processedTrends={processedData.trends}
                   />
                 </Card.Body>
@@ -211,8 +190,6 @@ const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => 
                   <div style={{ height: '70vh', padding: '1rem' }}>
                     <ItemBubblesChart 
                       receiptsData={receiptsData}
-                      isAuthenticated={isAuthenticated}
-                      isDemoMode={isDemoMode}
                       processedItems={processedData.items}
                     />
                   </div>
@@ -231,9 +208,26 @@ const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => 
                   <div style={{ height: '70vh', padding: '1rem' }}>
                     <SpendingTrends 
                       receiptsData={receiptsData}
-                      isAuthenticated={isAuthenticated}
-                      isDemoMode={isDemoMode}
                       processedTrends={processedData.trends}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Categories Tab */}
+              {activeTab === 'categories' && (
+                <div className="mobile-chart-container">
+                  <div className="chart-header p-3 bg-light">
+                    <div className="d-flex justify-content-between align-items-center">
+                      <h6 className="mb-0">Category Breakdown</h6>
+                      <small className="text-muted">{processedData.categories.length} categories</small>
+                    </div>
+                  </div>
+                  <div style={{ height: '70vh', padding: '1rem' }}>
+                    <CategoryPieChart 
+                      receiptsData={receiptsData}
+                      processedCategories={processedData.categories}
+                      processedItems={processedData.items}
                     />
                   </div>
                 </div>
@@ -243,7 +237,7 @@ const Dashboard = ({ receiptsData, isAuthenticated, userToken, isDemoMode }) => 
         </>
       )}
 
-      {/* Custom Styles - Preserved from original */}
+      {/* Custom Styles */}
       <style>{`
         .dashboard-container {
           padding-bottom: 2rem;

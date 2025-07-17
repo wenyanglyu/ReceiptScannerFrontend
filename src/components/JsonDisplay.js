@@ -4,14 +4,14 @@ import {
   Modal, Badge, Alert 
 } from 'react-bootstrap';
 import axios from 'axios';
+import './ReceiptHistory.css';
 
 const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const JsonDisplay = ({ 
   receiptData, 
   onUpdateSuccess,
-  isAuthenticated = false,
-  userToken = null
+  isAuthenticated = false
 }) => {
   const [editableData, setEditableData] = useState(null);
   const [receiptDate, setReceiptDate] = useState('');
@@ -189,8 +189,7 @@ const JsonDisplay = ({
 
       const headers = {
         'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userToken}`
+        'Content-Type': 'application/json'
       };
       
       const response = await axios.post(`${REACT_APP_API_BASE_URL}/Receipt/save-as-file`, dataToSave, { headers });
@@ -555,70 +554,61 @@ const JsonDisplay = ({
           </Button>
         </Modal.Footer>
       </Modal>
-
-      {/* Custom Styles */}
-      <style jsx>{`
-        .receipt-edit-card {
-          border: none;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+      {/* Receipt Image Section */}
+      <div className="receipt-image-section mt-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h5 className="mb-0">Original Receipt</h5>
+          <Badge bg="secondary" className="text-uppercase">Reference</Badge>
+        </div>
         
-        .item-card {
-          border: 1px solid #e9ecef;
-          transition: all 0.2s ease;
-        }
-        
-        .item-card:hover {
-          box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-          transform: translateY(-1px);
-        }
-        
-        .item-name {
-          font-size: 1rem;
-          font-weight: 600;
-          color: #212529;
-          line-height: 1.2;
-        }
-        
-        .item-meta {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-        }
-        
-        @media (max-width: 767.98px) {
-          .form-control,
-          .form-select {
-            font-size: 16px;
-            min-height: 44px;
-          }
-          
-          .form-control-lg {
-            min-height: 48px;
-            font-size: 16px;
-          }
-          
-          .btn {
-            min-height: 44px;
-            font-size: 16px;
-          }
-          
-          .btn-sm {
-            min-height: 38px;
-            font-size: 14px;
-            padding: 0.375rem 0.75rem;
-          }
-          
-          .item-actions .btn {
-            min-width: 60px;
-          }
-          
-          .badge {
-            font-size: 0.7rem;
-          }
-        }
-      `}</style>
+        <Card className="receipt-image-card">
+          <Card.Body className="p-3">
+            {editableData.imageName ? (
+              <div className="receipt-image-container">
+                <img
+                  src={`${REACT_APP_API_BASE_URL}/Receipt/image/${editableData.imageName}`}
+                  alt="Original Receipt"
+                  className="receipt-image"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    const placeholder = e.target.parentNode.querySelector('.image-placeholder');
+                    if (!placeholder) {
+                      const div = document.createElement('div');
+                      div.className = 'image-placeholder d-flex align-items-center justify-content-center bg-light text-muted p-4';
+                      div.style.minHeight = '200px';
+                      div.style.borderRadius = '8px';
+                      div.innerHTML = '<div class="text-center"><i class="fas fa-image fa-2x mb-2"></i><br>Image Not Available</div>';
+                      e.target.parentNode.appendChild(div);
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="image-placeholder d-flex align-items-center justify-content-center bg-light text-muted p-4">
+                <div className="text-center">
+                  <i className="fas fa-image fa-2x mb-2"></i>
+                  <br />
+                  No receipt image available
+                </div>
+              </div>
+            )}
+            
+            {/* Image info */}
+            {editableData.imageName && (
+              <div className="receipt-image-info mt-3 pt-3" style={{ borderTop: '1px solid #dee2e6' }}>
+                <Row className="text-muted small">
+                  <Col xs={12} md={6}>
+                    <strong>Image ID:</strong> {editableData.imageName}
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <strong>Filename:</strong> {editableData.displayName || 'N/A'}
+                  </Col>
+                </Row>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      </div>
     </>
   );
 };

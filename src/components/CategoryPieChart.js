@@ -16,8 +16,6 @@ const COLORS = [
 
 const CategoryPieChart = ({ 
   receiptsData, 
-  isAuthenticated, 
-  isDemoMode, 
   processedCategories, 
   processedItems,
   userToken 
@@ -27,14 +25,14 @@ const CategoryPieChart = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Category consolidation mapping - handles your actual category names
+  // Category consolidation mapping
   const consolidateCategories = (categories) => {
     const consolidated = {};
     
     categories.forEach(category => {
       let normalizedName = category.name;
       
-      // Consolidate similar categories based on your receipts.json data
+      // Consolidate similar categories
       if (['Vegetables', 'Veges', 'Vegetable'].includes(category.name)) {
         normalizedName = 'Vegetables';
       } else if (['Fruits', 'Fruit'].includes(category.name)) {
@@ -71,118 +69,97 @@ const CategoryPieChart = ({
     console.log('Pie segment clicked:', data, 'at index:', index);
   };
 
-  // Process data based on mode (demo vs authenticated)
+  // Process authenticated user's data
   useEffect(() => {
     const processData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        if (isAuthenticated) {
-          // Authenticated mode: fetch from backend API
-          console.log('[CATEGORY] Fetching authenticated data from API');
-          
-          try {
-            const headers = {
-              'Content-Type': 'application/json',
-              ...(userToken && { 'Authorization': `Bearer ${userToken}` })
-            };
+        console.log('[CATEGORY] Processing authenticated user data');
+        
+        try {
+          const headers = {
+            'Content-Type': 'application/json',
+            ...(userToken && { 'Authorization': `Bearer ${userToken}` })
+          };
 
-            // Fetch categories from API
-            const categoriesResponse = await fetch(
-              `${process.env.REACT_APP_API_BASE_URL || 'https://receiptscannerbackend.onrender.com/api'}/Receipt/stats/categories`,
-              { headers }
-            );
+          // Fetch categories from API
+          const categoriesResponse = await fetch(
+            `${process.env.REACT_APP_API_BASE_URL || 'https://receiptscannerbackend.onrender.com/api'}/Receipt/stats/categories`,
+            { headers }
+          );
 
-            if (!categoriesResponse.ok) {
-              throw new Error(`Categories API failed: ${categoriesResponse.status}`);
-            }
-
-            const categoriesData = await categoriesResponse.json();
-            
-            // Fetch receipts for word cloud
-            const receiptsResponse = await fetch(
-              `${process.env.REACT_APP_API_BASE_URL || 'https://receiptscannerbackend.onrender.com/api'}/receipt`,
-              { headers }
-            );
-
-            if (!receiptsResponse.ok) {
-              throw new Error(`Receipts API failed: ${receiptsResponse.status}`);
-            }
-
-            const receiptsApiData = await receiptsResponse.json();
-
-            // Process categories
-            const consolidatedCategories = consolidateCategories(categoriesData || []);
-            setPieData(consolidatedCategories);
-
-            // Process word cloud from receipts
-            const allItems = [];
-            Object.values(receiptsApiData || {}).forEach(receipt => {
-              const items = receipt?.Items || receipt?.items || [];
-              allItems.push(...items);
-            });
-
-            const counts = {};
-            allItems.forEach(item => {
-              const name = (item.CasualName || item.casualName || item.ProductName || item.productName || 'unknown').toLowerCase().trim();
-              counts[name] = (counts[name] || 0) + 1;
-            });
-
-            const words = Object.entries(counts)
-              .map(([text, value]) => ({ text, value }))
-              .sort((a, b) => b.value - a.value)
-              .slice(0, 40);
-
-            setWordCloudData(words);
-            setLoading(false);
-
-            console.log('[CATEGORY] API data processed:', {
-              categories: consolidatedCategories.length,
-              wordCloudItems: words.length
-            });
-
-          } catch (apiError) {
-            console.error('[CATEGORY] API Error:', apiError);
-            setError('Failed to load data from server');
-            setLoading(false);
+          if (!categoriesResponse.ok) {
+            throw new Error(`Categories API failed: ${categoriesResponse.status}`);
           }
 
-        } else {
-          // Demo/Anonymous mode: use local receipts.json data
-          console.log('[CATEGORY] Processing demo/anonymous data from receipts.json');
+          const categoriesData = await categoriesResponse.json();
           
-          if (receiptsData) {
-            // Use pre-processed categories if available, otherwise calculate from receipts.json structure
+          // Fetch receipts for word cloud
+          const receiptsResponse = await fetch(
+            `${process.env.REACT_APP_API_BASE_URL || 'https://receiptscannerbackend.onrender.com/api'}/receipt`,
+            { headers }
+          );
+
+          if (!receiptsResponse.ok) {
+            throw new Error(`Receipts API failed: ${receiptsResponse.status}`);
+          }
+
+          const receiptsApiData = await receiptsResponse.json();
+
+          // Process categories
+          const consolidatedCategories = consolidateCategories(categoriesData || []);
+          setPieData(consolidatedCategories);
+
+          // Process word cloud from receipts
+          const allItems = [];
+          (receiptsApiData || []).forEach(receipt => {
+            const items = receipt?.receiptInfo?.Items || receipt?.receiptInfo?.items || [];
+            allItems.push(...items);
+          });
+
+          const counts = {};
+          allItems.forEach(item => {
+            const name = (item.CasualName || item.casualName || item.ProductName || item.productName || 'unknown').toLowerCase().trim();
+            counts[name] = (counts[name] || 0) + 1;
+          });
+
+          const words = Object.entries(counts)
+            .map(([text, value]) => ({ text, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 40);
+
+          setWordCloudData(words);
+          setLoading(false);
+
+          console.log('[CATEGORY] API data processed:', {
+            categories: consolidatedCategories.length,
+            wordCloudItems: words.length
+          });
+
+        } catch (apiError) {
+          console.error('[CATEGORY] API Error:', apiError);
+          
+          // Fallback to local data processing if API fails but we have receiptsData
+          if (receiptsData && receiptsData.length > 0) {
+            console.log('[CATEGORY] Falling back to local data processing');
+            
+            // Use pre-processed categories if available, otherwise calculate from receipts
             let categories = processedCategories || [];
             if (!processedCategories || processedCategories.length === 0) {
               const categoryTotals = {};
               
-              // Handle receipts.json structure - receiptsData can be object or array
-              if (Array.isArray(receiptsData)) {
-                // If it's already an array (from Dashboard processing)
-                receiptsData.forEach(receipt => {
-                  const receiptInfo = receipt.receiptInfo || receipt;
-                  const items = receiptInfo?.Items || receiptInfo?.items || [];
-                  if (Array.isArray(items)) {
-                    items.forEach(item => {
-                      const category = item.Category || item.category || 'Other';
-                      categoryTotals[category] = (categoryTotals[category] || 0) + (item.Price || item.price || 0);
-                    });
-                  }
-                });
-              } else if (typeof receiptsData === 'object') {
-                // If it's the original receipts.json object structure
-                Object.values(receiptsData).forEach(receipt => {
-                  const items = receipt?.Items || receipt?.items || [];
-                  if (Array.isArray(items)) {
-                    items.forEach(item => {
-                      const category = item.Category || item.category || 'Other';
-                      categoryTotals[category] = (categoryTotals[category] || 0) + (item.Price || item.price || 0);
-                    });
-                  }
-                });
-              }
+              receiptsData.forEach(receipt => {
+                const receiptInfo = receipt.receiptInfo || receipt;
+                const items = receiptInfo?.Items || receiptInfo?.items || [];
+                if (Array.isArray(items)) {
+                  items.forEach(item => {
+                    const category = item.Category || item.category || 'Other';
+                    categoryTotals[category] = (categoryTotals[category] || 0) + (item.Price || item.price || 0);
+                  });
+                }
+              });
               
               categories = Object.entries(categoryTotals).map(([name, value]) => ({
                 name,
@@ -198,19 +175,11 @@ const CategoryPieChart = ({
             if (!processedItems || processedItems.length === 0) {
               const allItems = [];
               
-              // Handle both array and object structures for receipts
-              if (Array.isArray(receiptsData)) {
-                receiptsData.forEach(receipt => {
-                  const receiptInfo = receipt.receiptInfo || receipt;
-                  const receiptItems = receiptInfo?.Items || receiptInfo?.items || [];
-                  allItems.push(...receiptItems);
-                });
-              } else if (typeof receiptsData === 'object') {
-                Object.values(receiptsData).forEach(receipt => {
-                  const receiptItems = receipt?.Items || receipt?.items || [];
-                  allItems.push(...receiptItems);
-                });
-              }
+              receiptsData.forEach(receipt => {
+                const receiptInfo = receipt.receiptInfo || receipt;
+                const receiptItems = receiptInfo?.Items || receiptInfo?.items || [];
+                allItems.push(...receiptItems);
+              });
 
               const counts = {};
               allItems.forEach(item => {
@@ -236,15 +205,12 @@ const CategoryPieChart = ({
             setWordCloudData(items);
             setLoading(false);
             
-            console.log('[CATEGORY] Demo data processed:', {
+            console.log('[CATEGORY] Local fallback data processed:', {
               categories: consolidatedCategories.length,
               wordCloudItems: items.length
             });
-
           } else {
-            // No data available
-            setPieData([]);
-            setWordCloudData([]);
+            setError('Failed to load data from server');
             setLoading(false);
           }
         }
@@ -257,7 +223,7 @@ const CategoryPieChart = ({
     };
 
     processData();
-  }, [receiptsData, isAuthenticated, isDemoMode, processedCategories, processedItems, userToken]);
+  }, [receiptsData, processedCategories, processedItems, userToken]);
 
   // Custom tooltip formatter
   const CustomTooltip = ({ active, payload }) => {
@@ -351,21 +317,19 @@ const CategoryPieChart = ({
       }}>
         <h6>Error Loading Data</h6>
         <p>{error}</p>
-        {!isDemoMode && (
-          <button 
-            onClick={() => window.location.reload()}
-            style={{
-              padding: '0.5rem 1rem',
-              border: '1px solid #007bff',
-              backgroundColor: 'transparent',
-              color: '#007bff',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Retry
-          </button>
-        )}
+        <button 
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '0.5rem 1rem',
+            border: '1px solid #007bff',
+            backgroundColor: 'transparent',
+            color: '#007bff',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -382,10 +346,7 @@ const CategoryPieChart = ({
       }}>
         <h6 style={{ color: '#666', marginBottom: '0.5rem' }}>No Data Available</h6>
         <p style={{ color: '#666', margin: 0, textAlign: 'center' }}>
-          {isDemoMode 
-            ? "Demo data doesn't contain category information." 
-            : "Upload some receipts to see category breakdown."
-          }
+          Upload some receipts to see category breakdown.
         </p>
       </div>
     );
@@ -429,18 +390,6 @@ const CategoryPieChart = ({
         <div className="category-stats">
           <h6 style={{ marginBottom: '15px', fontSize: '1.1rem', fontWeight: 'bold' }}>
             Category Breakdown
-            {isDemoMode && (
-              <span style={{ 
-                marginLeft: '8px', 
-                fontSize: '0.7rem', 
-                backgroundColor: '#6c757d', 
-                color: 'white', 
-                padding: '2px 6px', 
-                borderRadius: '10px' 
-              }}>
-                DEMO
-              </span>
-            )}
           </h6>
           <div className="stats-list" style={{ maxHeight: '350px', overflowY: 'auto' }}>
             {pieData.map((category, index) => {

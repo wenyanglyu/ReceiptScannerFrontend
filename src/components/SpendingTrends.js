@@ -5,28 +5,21 @@ const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 const SpendingTrends = ({
   receiptsData = [],
-  isAuthenticated = false,
-  userToken = null,
-  isDemoMode = true,
   processedTrends = null
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [timeView, setTimeView] = useState('week'); // 'receipt', 'week', 'month', 'year'
-  const [chartType, setChartType] = useState('bar'); // Only 'bar' now
   const [showAverage, setShowAverage] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [receiptData, setReceiptData] = useState([]);
 
   console.log('[SPENDING_TRENDS] Received props:', {
     receiptsDataLength: receiptsData?.length || 0,
-    isAuthenticated,
-    isDemoMode,
-    hasProcessedTrends: !!processedTrends,
-    hasUserToken: !!userToken
+    hasProcessedTrends: !!processedTrends
   });
 
-  // Process data based on mode (demo vs authenticated)
+  // Process authenticated user's data
   useEffect(() => {
     const processData = async () => {
       try {
@@ -34,8 +27,7 @@ const SpendingTrends = ({
         setError(null);
 
         if (receiptsData && receiptsData.length > 0) {
-          // Use demo/anonymous data directly
-          console.log('[SPENDING_TRENDS] Processing demo data:', receiptsData.length, 'receipts');
+          console.log('[SPENDING_TRENDS] Processing user data:', receiptsData.length, 'receipts');
           
           // Use pre-processed trends if available, otherwise calculate from receipts
           if (processedTrends && processedTrends.length > 0) {
@@ -44,8 +36,7 @@ const SpendingTrends = ({
               id: trend.id || Math.random().toString(),
               date: new Date(trend.date),
               amount: parseFloat(trend.amount || trend.value || 0),
-              isDemo: trend.isDemo || false,
-              isAnonymous: trend.isAnonymous || false
+              isAuthenticated: true
             }));
             setReceiptData(formattedTrends);
           } else {
@@ -67,8 +58,7 @@ const SpendingTrends = ({
                 id: receipt.imageName || Math.random().toString(),
                 date: date,
                 amount: amount,
-                isDemo: !isAuthenticated, // All data is "demo" when not authenticated
-                isAnonymous: false,
+                isAuthenticated: true,
                 vendor: receiptInfo?.StoreName || receiptInfo?.storeName || 'Unknown'
               };
             }).filter(item => item.amount > 0); // Filter out zero amounts
@@ -94,7 +84,7 @@ const SpendingTrends = ({
     };
 
     processData();
-  }, [receiptsData, isAuthenticated, isDemoMode, processedTrends, userToken]);
+  }, [receiptsData, processedTrends]);
 
   // Handle window resize for responsive design
   useEffect(() => {
@@ -121,8 +111,7 @@ const SpendingTrends = ({
           }),
           amount: receipt.amount,
           vendor: receipt.vendor,
-          isDemo: receipt.isDemo,
-          isAnonymous: receipt.isAnonymous
+          isAuthenticated: receipt.isAuthenticated
         }));
         
       case 'week': {
@@ -141,26 +130,19 @@ const SpendingTrends = ({
               year,
               weekNumber: weekNum,
               amount: 0,
-              receipts: [],
-              demoCount: 0,
-              anonymousCount: 0
+              receipts: []
             };
           }
           
           weeklyData[weekKey].amount += receipt.amount;
           weeklyData[weekKey].receipts.push(receipt);
-          if (receipt.isDemo) weeklyData[weekKey].demoCount++;
-          if (receipt.isAnonymous) weeklyData[weekKey].anonymousCount++;
         });
         
         return Object.values(weeklyData).map(week => ({
           label: `Week ${week.weekNumber}`,
           amount: week.amount,
           count: week.receipts.length,
-          demoCount: week.demoCount,
-          anonymousCount: week.anonymousCount,
-          isDemo: week.demoCount > 0,
-          isAnonymous: week.anonymousCount > 0
+          isAuthenticated: true
         }));
       }
         
@@ -178,16 +160,12 @@ const SpendingTrends = ({
               year,
               month,
               amount: 0,
-              receipts: [],
-              demoCount: 0,
-              anonymousCount: 0
+              receipts: []
             };
           }
           
           monthlyData[monthKey].amount += receipt.amount;
           monthlyData[monthKey].receipts.push(receipt);
-          if (receipt.isDemo) monthlyData[monthKey].demoCount++;
-          if (receipt.isAnonymous) monthlyData[monthKey].anonymousCount++;
         });
         
         return Object.values(monthlyData).map(month => {
@@ -196,10 +174,7 @@ const SpendingTrends = ({
             label: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
             amount: month.amount,
             count: month.receipts.length,
-            demoCount: month.demoCount,
-            anonymousCount: month.anonymousCount,
-            isDemo: month.demoCount > 0,
-            isAnonymous: month.anonymousCount > 0
+            isAuthenticated: true
           };
         });
       }
@@ -214,26 +189,19 @@ const SpendingTrends = ({
             yearlyData[year] = {
               year,
               amount: 0,
-              receipts: [],
-              demoCount: 0,
-              anonymousCount: 0
+              receipts: []
             };
           }
           
           yearlyData[year].amount += receipt.amount;
           yearlyData[year].receipts.push(receipt);
-          if (receipt.isDemo) yearlyData[year].demoCount++;
-          if (receipt.isAnonymous) yearlyData[year].anonymousCount++;
         });
         
         return Object.values(yearlyData).map(year => ({
           label: year.year.toString(),
           amount: year.amount,
           count: year.receipts.length,
-          demoCount: year.demoCount,
-          anonymousCount: year.anonymousCount,
-          isDemo: year.demoCount > 0,
-          isAnonymous: year.anonymousCount > 0
+          isAuthenticated: true
         }));
       }
         
@@ -256,18 +224,6 @@ const SpendingTrends = ({
     );
   }, [trendsData]);
 
-  // Calculate data summary for demo mode
-  const getDataSummary = () => {
-    if (!receiptData.length) return { total: 0, demo: 0, anonymous: 0, saved: 0 };
-    
-    return {
-      total: receiptData.length,
-      demo: receiptData.filter(r => r.isDemo).length,
-      anonymous: receiptData.filter(r => r.isAnonymous && !r.isDemo).length,
-      saved: receiptData.filter(r => !r.isDemo && !r.isAnonymous).length
-    };
-  };
-
   const getViewLabel = () => {
     switch(timeView) {
       case 'receipt': return 'Receipt';
@@ -278,18 +234,14 @@ const SpendingTrends = ({
     }
   };
 
-  // Get bar color based on data source
+  // Get bar color for authenticated user data
   const getBarColor = (item, alpha = 0.9) => {
-    if (item.isDemo && item.isAnonymous) return `rgba(23, 162, 184, ${alpha})`; // Mixed: teal
-    if (item.isDemo) return `rgba(108, 117, 125, ${alpha})`; // Demo: gray
-    if (item.isAnonymous) return `rgba(255, 193, 7, ${alpha})`; // Anonymous: yellow
-    return `rgba(255, 255, 255, ${alpha})`; // Authenticated: white
+    return `rgba(0, 123, 255, ${alpha})`; // Primary blue for authenticated data
   };
 
   // Responsive chart component
   const ResponsiveChart = ({ data, showAvg, avgValue }) => {
     const maxAmount = Math.max(...data.map(d => d.amount));
-    const dataSummary = getDataSummary();
     
     if (isMobile) {
       // Mobile layout
@@ -305,7 +257,7 @@ const SpendingTrends = ({
           overflow: 'visible',
           width: '100%'
         }}>
-          {/* Chart Title with Data Source Indicator */}
+          {/* Chart Title */}
           <div style={{
             fontSize: '1rem',
             fontWeight: '700',
@@ -313,13 +265,6 @@ const SpendingTrends = ({
             textAlign: 'center'
           }}>
             {getViewLabel()} Spending Trends
-            {isDemoMode && (
-              <div style={{ fontSize: '0.7rem', fontWeight: '500', opacity: 0.9 }}>
-                {dataSummary.demo > 0 && `${dataSummary.demo} demo`}
-                {dataSummary.anonymous > 0 && ` • ${dataSummary.anonymous} anonymous`}
-                {dataSummary.saved > 0 && ` • ${dataSummary.saved} saved`}
-              </div>
-            )}
           </div>
           
           {/* Chart Area */}
@@ -373,8 +318,7 @@ const SpendingTrends = ({
                     minWidth: '12px',
                     maxWidth: '35px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    border: item.isDemo ? '1px solid rgba(255,255,255,0.3)' : 'none'
+                    transition: 'all 0.2s ease'
                   }}
                   onTouchStart={(e) => {
                     e.currentTarget.style.transform = 'scale(1.05)';
@@ -383,20 +327,6 @@ const SpendingTrends = ({
                     e.currentTarget.style.transform = 'scale(1)';
                   }}
                 >
-                  {/* Data source indicator */}
-                  {isDemoMode && (item.isDemo || item.isAnonymous) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '-25px',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      width: '4px',
-                      height: '4px',
-                      borderRadius: '50%',
-                      background: item.isDemo ? '#6c757d' : '#ffc107'
-                    }} />
-                  )}
-                  
                   {/* Amount label on top of bar */}
                   <div style={{
                     position: 'absolute',
@@ -453,7 +383,7 @@ const SpendingTrends = ({
           overflow: 'visible',
           width: '100%'
         }}>
-          {/* Chart Title with Data Source Indicator */}
+          {/* Chart Title */}
           <div style={{
             fontSize: '1.3rem',
             fontWeight: '700',
@@ -461,13 +391,6 @@ const SpendingTrends = ({
             textAlign: 'center'
           }}>
             {getViewLabel()} Spending Trends
-            {isDemoMode && (
-              <div style={{ fontSize: '0.8rem', fontWeight: '500', opacity: 0.9, marginTop: '0.25rem' }}>
-                {dataSummary.demo > 0 && `${dataSummary.demo} demo receipts`}
-                {dataSummary.anonymous > 0 && ` • ${dataSummary.anonymous} anonymous`}
-                {dataSummary.saved > 0 && ` • ${dataSummary.saved} saved`}
-              </div>
-            )}
           </div>
           
           {/* Chart Area */}
@@ -521,8 +444,7 @@ const SpendingTrends = ({
                     minWidth: '30px',
                     maxWidth: '80px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    border: item.isDemo ? '2px solid rgba(255,255,255,0.3)' : 'none'
+                    transition: 'all 0.2s ease'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'scale(1.05)';
@@ -531,28 +453,10 @@ const SpendingTrends = ({
                     e.currentTarget.style.transform = 'scale(1)';
                   }}
                 >
-                  {/* Data source indicator */}
-                  {isDemoMode && (item.isDemo || item.isAnonymous) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '-40px',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.6rem',
-                      fontWeight: '600',
-                      background: item.isDemo ? '#6c757d' : '#ffc107',
-                      color: item.isDemo ? 'white' : 'black'
-                    }}>
-                      {item.isDemo ? 'Demo' : 'Anonymous'}
-                    </div>
-                  )}
-                  
                   {/* Amount label on top of bar */}
                   <div style={{
                     position: 'absolute',
-                    top: isDemoMode && (item.isDemo || item.isAnonymous) ? '-55px' : '-35px',
+                    top: '-35px',
                     left: '50%',
                     transform: 'translateX(-50%)',
                     background: 'rgba(0,0,0,0.8)',
@@ -614,11 +518,6 @@ const SpendingTrends = ({
           marginBottom: '1rem'
         }} />
         <p>Loading spending trends...</p>
-        {isDemoMode && (
-          <small style={{ opacity: 0.8 }}>
-            {isAuthenticated ? 'Loading your data...' : 'Processing demo data...'}
-          </small>
-        )}
       </div>
     );
   }
@@ -635,26 +534,22 @@ const SpendingTrends = ({
       }}>
         <h6>Error Loading Spending Trends</h6>
         <p>{error}</p>
-        {!isDemoMode && (
-          <button 
-            onClick={() => window.location.reload()}
-            style={{
-              padding: '0.5rem 1rem',
-              background: '#c33',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: 'pointer'
-            }}
-          >
-            Retry
-          </button>
-        )}
+        <button 
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#c33',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.5rem',
+            cursor: 'pointer'
+          }}
+        >
+          Retry
+        </button>
       </div>
     );
   }
-  
-  const dataSummary = getDataSummary();
 
   return (
     <div style={{
@@ -757,11 +652,9 @@ const SpendingTrends = ({
           <div style={{ fontSize: isMobile ? '1.1rem' : '1.25rem', fontWeight: '700' }}>
             ${averageSpending.toFixed(2)}
           </div>
-          {isDemoMode && (
-            <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>
-              {dataSummary.total} data points
-            </div>
-          )}
+          <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>
+            {receiptData.length} data points
+          </div>
         </div>
         
         <div style={{
@@ -790,58 +683,8 @@ const SpendingTrends = ({
         avgValue={averageSpending}
       />
       
-      {/* Data Source Legend for Demo Mode */}
-      {isDemoMode && (dataSummary.demo > 0 || dataSummary.anonymous > 0) && (
-        <div style={{
-          marginTop: '1rem',
-          padding: '0.75rem',
-          background: 'rgba(255,255,255,0.9)',
-          borderRadius: '0.5rem',
-          fontSize: '0.8rem'
-        }}>
-          <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>Data Sources:</div>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            {dataSummary.demo > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  background: '#6c757d',
-                  borderRadius: '2px',
-                  border: '1px solid rgba(255,255,255,0.3)'
-                }} />
-                <span>Demo Data</span>
-              </div>
-            )}
-            {dataSummary.anonymous > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  background: '#ffc107',
-                  borderRadius: '2px'
-                }} />
-                <span>Your Uploads</span>
-              </div>
-            )}
-            {dataSummary.saved > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  background: '#fff',
-                  borderRadius: '2px',
-                  border: '1px solid #ccc'
-                }} />
-                <span>Saved Receipts</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      
       {/* CSS Animation */}
-      <style jsx>{`
+      <style>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
