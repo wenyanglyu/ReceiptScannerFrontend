@@ -8,6 +8,14 @@ import ReceiptHistory from './components/ReceiptHistory';
 import axios from 'axios';
 
 axios.defaults.withCredentials = true;
+axios.defaults.baseURL = process.env.REACT_APP_API_BASE_URL;
+
+axios.interceptors.request.use(request => {
+  console.log('Making request to:', request.url);
+  console.log('Request headers:', request.headers);
+  console.log('Credentials:', request.withCredentials);
+  return request;
+});
 
 function App() {
   // Simplified state management - authentication required for all functionality
