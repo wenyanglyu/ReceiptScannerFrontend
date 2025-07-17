@@ -35,41 +35,40 @@ function App() {
 
   const REACT_APP_API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
   
-  // In App.js, add this function:
-const handleDeleteSuccess = async (deletedImageNames) => {
-  console.log('handleDeleteSuccess called with:', deletedImageNames);
-  
-  try {
-    // Force refresh from server
-    console.log('Fetching fresh receipt data...');
-    const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/Receipt`);
+  // Handle successful deletion and refresh receipt data
+  const handleDeleteSuccess = async (deletedImageNames) => {
+    console.log('handleDeleteSuccess called with:', deletedImageNames);
     
-    console.log('Fresh receipt data:', response.data);
-    
-    setAppState(prev => ({
-      ...prev,
-      receiptsData: response.data || []
-    }));
-    
-    console.log(`Successfully refreshed data after deleting ${deletedImageNames.length} receipts`);
-  } catch (error) {
-    console.error('Error refreshing receipts after delete:', error);
-    
-    // Fallback: filter out deleted receipts from current state
-    console.log('Using fallback: filtering out deleted receipts locally');
-    setAppState(prev => ({
-      ...prev,
-      receiptsData: prev.receiptsData.filter(
-        receipt => !deletedImageNames.includes(receipt.imageName)
-      )
-    }));
-  }
-};
+    try {
+      // Force refresh from server
+      console.log('Fetching fresh receipt data...');
+      const response = await axios.get(`${process.env.REACT_APP_API_BASE_URL}/Receipt`);
+      
+      console.log('Fresh receipt data:', response.data);
+      
+      setAppState(prev => ({
+        ...prev,
+        receiptsData: response.data || []
+      }));
+      
+      console.log(`Successfully refreshed data after deleting ${deletedImageNames.length} receipts`);
+    } catch (error) {
+      console.error('Error refreshing receipts after delete:', error);
+      
+      // Fallback: filter out deleted receipts from current state
+      console.log('Using fallback: filtering out deleted receipts locally');
+      setAppState(prev => ({
+        ...prev,
+        receiptsData: prev.receiptsData.filter(
+          receipt => !deletedImageNames.includes(receipt.imageName)
+        )
+      }));
+    }
+  };
 
-  // 🔧 UPDATED: Check session validity on app startup
+  // Check session validity on app startup
   useEffect(() => {
     const checkAuthenticationState = async () => {
-      // First, try to get saved profile data from localStorage (UI only)
       const savedAuthState = localStorage.getItem('receiptScannerAuth');
       let savedUser = null;
       
@@ -92,12 +91,11 @@ const handleDeleteSuccess = async (deletedImageNames) => {
         if (response.data.isValid) {
           console.log('Valid session found, user:', response.data.user.name);
           
-          // Use backend user data as primary source, fallback to saved data
           const user = {
             sub: response.data.user.id,
             name: response.data.user.name || savedUser?.name,
             email: response.data.user.email || savedUser?.email,
-            picture: savedUser?.picture // Profile picture not in JWT, use saved
+            picture: savedUser?.picture
           };
           
           setAppState(prev => ({
@@ -107,25 +105,20 @@ const handleDeleteSuccess = async (deletedImageNames) => {
             isLoading: false
           }));
           
-          // Update localStorage with current user data
           localStorage.setItem('receiptScannerAuth', JSON.stringify({
             user: user,
             timestamp: Date.now()
           }));
-        } else {
-          // Session invalid, clear everything
-          console.log('No valid session found');
-          localStorage.removeItem('receiptScannerAuth');
-          setAppState(prev => ({ 
-            ...prev, 
-            isAuthenticated: false, 
-            user: null,
-            isLoading: false 
-          }));
         }
       } catch (error) {
         console.log('Session validation failed:', error.response?.status);
-        // Session expired or network error, clear auth state
+        
+        // Only show "session expired" if user had previous session
+        if (savedUser) {
+          setError('Your session has expired. Please sign in again.');
+        }
+        // If no savedUser, this is a fresh visit - no error message needed
+        
         localStorage.removeItem('receiptScannerAuth');
         setAppState(prev => ({ 
           ...prev, 
@@ -153,7 +146,7 @@ const handleDeleteSuccess = async (deletedImageNames) => {
     }
   }, [appState.isAuthenticated]);
 
-  // 🔧 UPDATED: Handle OAuth redirect response
+  // Handle OAuth redirect response
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.hash.substring(1));
     const idToken = urlParams.get('id_token');
@@ -203,7 +196,7 @@ const handleDeleteSuccess = async (deletedImageNames) => {
     }
   }, [REACT_APP_API_BASE_URL]);
 
-  // 🔧 UPDATED: Fetch authenticated user's receipts (no Authorization header)
+  // Fetch authenticated user's receipts (no Authorization header)
   const fetchUserReceipts = async () => {
     try {
       setAppState(prev => ({ ...prev, isLoading: true }));
@@ -241,7 +234,7 @@ const handleDeleteSuccess = async (deletedImageNames) => {
     }
   };
 
-  // 🆕 NEW: Handle session expiration
+  // Handle session expiration
   const handleSessionExpired = () => {
     localStorage.removeItem('receiptScannerAuth');
     setAppState({
@@ -285,6 +278,7 @@ const handleDeleteSuccess = async (deletedImageNames) => {
 
   // Handle custom Google sign-in button click
   const handleGoogleSignIn = () => {
+    setError(null); // Clear any previous error messages
     setAppState(prev => ({ ...prev, isLoading: true }));
     
     // Create Google OAuth URL to get ID token
@@ -297,11 +291,10 @@ const handleDeleteSuccess = async (deletedImageNames) => {
       `nonce=${Math.random().toString(36).substring(2, 15)}&` +
       `state=security_token`;
     
-    // Redirect to Google OAuth
     window.location.href = googleAuthUrl;
   };
 
-  // 🔧 UPDATED: Handle logout with backend call
+  // Handle logout with backend call
   const handleLogout = async () => {
     try {
       // Call backend logout to clear session cookie
@@ -347,12 +340,18 @@ const handleDeleteSuccess = async (deletedImageNames) => {
       .slice(0, 2);
   };
 
-  // 🔧 UPDATED: Add axios interceptor for automatic logout on 401
+  // Add axios interceptor for automatic logout on 401
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
       response => response,
       error => {
-        if (error.response?.status === 401 && appState.isAuthenticated) {
+        // Don't trigger logout during login attempts
+        const isLoginEndpoint = error.config?.url?.includes('/auth/google-login') || 
+                               error.config?.url?.includes('/auth/validate-session');
+        
+        if (error.response?.status === 401 && 
+            appState.isAuthenticated && 
+            !isLoginEndpoint) {
           console.log('401 detected, handling session expiration');
           handleSessionExpired();
         }
@@ -642,129 +641,6 @@ const handleDeleteSuccess = async (deletedImageNames) => {
           />
         )}
       </Container>
-
-      {/* Custom Styles */}
-      <style>{`
-        .custom-google-signin-btn {
-          font-weight: 600;
-          border: 2px solid #4285F4;
-          color: #4285F4;
-          background: white;
-          transition: all 0.3s ease;
-          min-width: 240px;
-        }
-        
-        .custom-google-signin-btn:hover {
-          background: #4285F4;
-          color: white;
-          border-color: #4285F4;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
-        }
-        
-        .custom-google-signin-btn:focus {
-          box-shadow: 0 0 0 0.2rem rgba(66, 133, 244, 0.25);
-        }
-        
-        .custom-google-signin-btn:disabled {
-          opacity: 0.7;
-          transform: none;
-        }
-        
-        .user-avatar-container {
-          cursor: pointer;
-          padding: 4px;
-          transition: transform 0.2s ease;
-        }
-        
-        .user-avatar-container:hover {
-          transform: scale(1.05);
-        }
-        
-        .user-avatar-image {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          border: 2px solid rgba(255,255,255,0.2);
-          object-fit: cover;
-        }
-        
-        .user-avatar-fallback {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: 600;
-          font-size: 14px;
-          border: 2px solid rgba(255,255,255,0.2);
-        }
-        
-        .profile-modal-avatar {
-          width: 80px;
-          height: 80px;
-          border-radius: 50%;
-          border: 3px solid #e9ecef;
-          object-fit: cover;
-        }
-        
-        .profile-modal-avatar-fallback {
-          width: 80px;
-          height: 80px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: 600;
-          font-size: 28px;
-          margin: 0 auto;
-          border: 3px solid #e9ecef;
-        }
-        
-        .logout-btn {
-          border-color: #dc3545;
-          color: #dc3545;
-          font-weight: 500;
-          transition: all 0.2s ease;
-        }
-        
-        .logout-btn:hover {
-          background-color: #dc3545;
-          border-color: #dc3545;
-          color: white;
-        }
-        
-        .feature-highlight {
-          padding: 1rem;
-          transition: transform 0.2s ease;
-        }
-        
-        .feature-highlight:hover {
-          transform: translateY(-2px);
-        }
-        
-        @media (max-width: 767.98px) {
-          .feature-highlight {
-            padding: 0.75rem;
-          }
-          
-          .custom-google-signin-btn {
-            min-width: 200px;
-          }
-          
-          .user-avatar-image,
-          .user-avatar-fallback {
-            width: 32px;
-            height: 32px;
-            font-size: 12px;
-          }
-        }
-      `}</style>
     </>
   );
 }

@@ -78,7 +78,78 @@
   box-shadow: none;
 }
 
-/* User Avatar */
+/* User Avatar Styles */
+.user-avatar-container {
+  cursor: pointer;
+  padding: 4px;
+  transition: transform 0.2s ease;
+}
+
+.user-avatar-container:hover {
+  transform: scale(1.05);
+}
+
+.user-avatar-image {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2);
+  object-fit: cover;
+}
+
+.user-avatar-fallback {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+
+/* Profile Modal Styles */
+.profile-modal-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid #e9ecef;
+  object-fit: cover;
+}
+
+.profile-modal-avatar-fallback {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 28px;
+  margin: 0 auto;
+  border: 3px solid #e9ecef;
+}
+
+/* Logout Button Styles */
+.logout-btn {
+  border-color: #dc3545;
+  color: #dc3545;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: white;
+}
+
+/* Legacy User Avatar (for backward compatibility) */
 .user-avatar {
   width: 36px;
   height: 36px;
@@ -182,7 +253,7 @@
 /* Mobile Optimizations */
 @media (max-width: 767.98px) {
   .feature-highlight {
-    padding: 1rem;
+    padding: 0.75rem;
     margin-bottom: 0.75rem;
   }
   
@@ -190,6 +261,13 @@
     min-width: 200px;
     font-size: 0.9rem;
     padding: 0.75rem 1.5rem;
+  }
+  
+  .user-avatar-image,
+  .user-avatar-fallback {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
   }
   
   .navbar-brand {
