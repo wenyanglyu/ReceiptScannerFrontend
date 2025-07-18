@@ -7,13 +7,12 @@ import Dashboard from './components/Dashboard';
 import ReceiptHistory from './components/ReceiptHistory';
 import axios from 'axios';
 
-axios.defaults.withCredentials = true;
+// Configure axios base URL (no withCredentials needed for Authorization headers)
 axios.defaults.baseURL = process.env.REACT_APP_API_BASE_URL;
 
 axios.interceptors.request.use(request => {
   console.log('Making request to:', request.url);
   console.log('Request headers:', request.headers);
-  console.log('Credentials:', request.withCredentials);
   return request;
 });
 
@@ -71,18 +70,26 @@ function App() {
     const checkAuthenticationState = async () => {
       const savedAuthState = localStorage.getItem('receiptScannerAuth');
       let savedUser = null;
+      let savedToken = null;
       
       if (savedAuthState) {
         try {
           const authData = JSON.parse(savedAuthState);
           savedUser = authData.user;
+          savedToken = authData.token;
         } catch (error) {
           console.error('Failed to parse saved auth state:', error);
           localStorage.removeItem('receiptScannerAuth');
+          localStorage.removeItem('authToken');
         }
       }
 
-      // Check if session cookie is valid with backend
+      // If we have a saved token, set it in axios headers
+      if (savedToken) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+      }
+
+      // Check if session is valid with backend
       try {
         setAppState(prev => ({ ...prev, isLoading: true }));
         
@@ -105,13 +112,19 @@ function App() {
             isLoading: false
           }));
           
+          // Update localStorage with current user data
           localStorage.setItem('receiptScannerAuth', JSON.stringify({
             user: user,
+            token: savedToken,
             timestamp: Date.now()
           }));
         }
       } catch (error) {
         console.log('Session validation failed:', error.response?.status);
+        
+        // Clear invalid tokens
+        delete axios.defaults.headers.common['Authorization'];
+        localStorage.removeItem('authToken');
         
         // Only show "session expired" if user had previous session
         if (savedUser) {
@@ -158,13 +171,21 @@ function App() {
           
           const payload = JSON.parse(atob(idToken.split('.')[1]));
 
-          // Send ID token to backend for validation and JWT cookie creation
+          // Send ID token to backend for validation and JWT token creation
           const response = await axios.post(`${REACT_APP_API_BASE_URL}/auth/google-login`, idToken, {
-            headers: { 'Content-Type': 'application/json' },
-            withCredentials: true
+            headers: { 'Content-Type': 'application/json' }
           });
 
           console.log('Backend login successful:', response.data);
+
+          // ✅ Get JWT token from response
+          const jwtToken = response.data.token;
+          
+          // ✅ Set Authorization header for all future requests
+          axios.defaults.headers.common['Authorization'] = `Bearer ${jwtToken}`;
+          
+          // ✅ Store token in localStorage
+          localStorage.setItem('authToken', jwtToken);
 
           // Create user object for UI (including profile picture from Google)
           const user = {
@@ -174,8 +195,12 @@ function App() {
             picture: payload.picture
           };
 
-          // Save to localStorage for UI persistence (no token needed)
-          const authState = { user, timestamp: Date.now() };
+          // Save to localStorage with token
+          const authState = { 
+            user, 
+            token: jwtToken, 
+            timestamp: Date.now() 
+          };
           localStorage.setItem('receiptScannerAuth', JSON.stringify(authState));
 
           setAppState(prev => ({
@@ -196,12 +221,12 @@ function App() {
     }
   }, [REACT_APP_API_BASE_URL]);
 
-  // Fetch authenticated user's receipts (no Authorization header)
+  // Fetch authenticated user's receipts (uses Authorization header automatically)
   const fetchUserReceipts = async () => {
     try {
       setAppState(prev => ({ ...prev, isLoading: true }));
       
-      // No Authorization header needed - uses session cookie automatically
+      // Authorization header is set automatically via axios.defaults
       const response = await axios.get(`${REACT_APP_API_BASE_URL}/Receipt`, {
         headers: {
           'Accept': 'application/json',
@@ -236,7 +261,11 @@ function App() {
 
   // Handle session expiration
   const handleSessionExpired = () => {
+    // Clear Authorization header and tokens
+    delete axios.defaults.headers.common['Authorization'];
+    localStorage.removeItem('authToken');
     localStorage.removeItem('receiptScannerAuth');
+    
     setAppState({
       isAuthenticated: false,
       user: null,
@@ -297,14 +326,16 @@ function App() {
   // Handle logout with backend call
   const handleLogout = async () => {
     try {
-      // Call backend logout to clear session cookie
+      // Call backend logout (optional, since we're using stateless tokens)
       await axios.post(`${REACT_APP_API_BASE_URL}/auth/logout`);
     } catch (error) {
       console.error('Logout API call failed:', error);
       // Continue with local logout even if API fails
     }
     
-    // Clear localStorage and local state
+    // ✅ Clear Authorization header and tokens
+    delete axios.defaults.headers.common['Authorization'];
+    localStorage.removeItem('authToken');
     localStorage.removeItem('receiptScannerAuth');
     
     setAppState({
